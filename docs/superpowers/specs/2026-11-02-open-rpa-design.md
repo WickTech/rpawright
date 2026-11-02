@@ -1,7 +1,7 @@
 # rpawright: Design Spec
 
 - **Date:** 2026-11-02
-- **Status:** Draft, awaiting user review
+- **Status:** Approved by user 2026-11-02
 - **Author:** Rishabh Verma (with Claude Code)
 - **Repo:** local folder `~/workspace/open-rpa`; public GitHub repo `github.com/WickTech/rpawright` (not created yet)
 - **Name:** `rpawright`, used for the PyPI package, the CLI command, and the Python import name. PyPI name verified free on 2026-11-02.
