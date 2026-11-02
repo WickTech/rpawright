@@ -1,0 +1,25 @@
+# Demo bot: logs in to the bundled fixture site.
+# Serve it first: python -m http.server 8765 --directory tests/fixtures/site
+version: 1
+name: demo-login
+description: Log in to the fixture site; the email field has a fallback locator.
+steps:
+  # Open the login page.
+  - goto: http://127.0.0.1:8765/login.html
+  # Fill the email. If the id changes, the second locator still finds the field.
+  - fill:
+      target:
+        - { css: "#email" }
+        - { role: textbox, name: Email }
+      value: me@example.com
+  # Fill the password, found by its visible label.
+  - fill:
+      target: [{ label: Password }]
+      value: not-a-real-password
+  # Submit the form.
+  - click:
+      target: [{ role: button, name: Sign in }]
+  # Confirm the dashboard loaded.
+  - assert:
+      target: [{ role: heading, name: Welcome }]
+      visible: true

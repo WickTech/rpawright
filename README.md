@@ -5,7 +5,7 @@ Open-source, self-healing web RPA: record browser tasks to YAML, run them on a s
 [![CI](https://github.com/WickTech/rpawright/actions/workflows/ci.yml/badge.svg)](https://github.com/WickTech/rpawright/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-**Status: pre-alpha, not usable yet. M1 (foundation) is in progress.**
+**Status: pre-alpha — M1 (foundation: validate + run) is complete and in review; recording, vault, healing and scheduling are not built yet.**
 
 ## What it is
 
@@ -51,22 +51,22 @@ steps:
 
 ## Planned features
 
-None of the following is implemented yet.
+Validated YAML workflows, `validate`, `schema`, locator fallback and `run` already work. Everything below beyond that is planned. Items marked (available) exist today.
 
 **Authoring**
 - Recorder that turns browser actions into YAML steps, with several ranked locators per target
 - `rpawright pick` to choose an element and get locator candidates
-- Typed, validated workflow format with a generated JSON Schema for editor autocomplete
+- Typed, validated workflow format with a generated JSON Schema for editor autocomplete (available)
 
 **Running**
 - Steps for navigation, forms, extraction, downloads, uploads, HTTP, and CSV/XLSX files
 - Variables, sandboxed `{{ }}` expressions, `if`, `for_each`, and `call`
 - Per-step `retry` and `on_error`
-- Debugging with `--headed`, `--step`, `pause:`, and Playwright traces
-- Run artifacts: redacted JSONL log, failure screenshot, optional trace
+- Debugging with `--headed`, `--step`, `pause:`, and Playwright traces (`--headed`, `--step` and traces are available; `pause:` is not)
+- Run artifacts: redacted JSONL log, failure screenshot, optional trace (available; redaction is not built yet)
 
 **Self-healing**
-- Locator fallback chain, with a suggestion to reorder locators that keep falling back
+- Locator fallback chain (available), with a suggestion to reorder locators that keep falling back
 - LLM repair proposals from Groq, Ollama, or Anthropic, verified on the live page
 - YAML changes only after you review and confirm a diff (`heal review`)
 
@@ -98,7 +98,7 @@ shipped behavior.
 
 | Milestone | Scope | Status |
 |---|---|---|
-| M1 | Workflow models, `validate`, core runner, locator fallback, artifacts | in progress |
+| M1 | Workflow models, `validate`, core runner, locator fallback, artifacts | complete (in review) |
 | M2 | All v1 steps, control flow, expressions, CSV/XLSX/HTTP, retry/on_error | planned |
 | M3 | Vault, policy guard, domain binding, redaction, masked screenshots | planned |
 | M4 | Recorder, toolbar, locator generation, `pick` | planned |
@@ -109,6 +109,42 @@ shipped behavior.
 v2 backlog: work queues, file-watch and queue triggers, OCR and document extraction,
 `llm_extract` step, human-in-the-loop `ask:` step, Windows desktop automation, local web
 designer, optional Rust daemon.
+
+## Quick start
+
+Prerequisites: Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+
+```bash
+uv sync
+uv run playwright install chromium
+uv run rpawright validate examples/bots/demo-login.yaml
+```
+
+The demo bot logs in to the fixture site bundled in this repository, so serve that site
+first (base URL `http://127.0.0.1:8765`). In one terminal:
+
+```bash
+python -m http.server 8765 --directory tests/fixtures/site
+```
+
+In another terminal:
+
+```bash
+uv run rpawright run examples/bots/demo-login.yaml --headed
+```
+
+`run` prints one line per step, then `run ok` or `run failed` with the run directory. The
+email step lists `#email` first and a `textbox` named "Email" second; if the page's id
+changes (try `login_v2.html`), the second locator still finds the field.
+
+Artifacts are written to `runs/demo-login/<UTC timestamp>/` (change the root with
+`--runs-dir`):
+
+- `log.jsonl`: one record per step
+- `fail-<step>.png`: screenshot of the page, only when a step fails
+- `trace.zip`: Playwright trace, only with `--trace`
+
+Exit codes: `0` run ok, `1` a step failed, `2` the bot file is invalid.
 
 ## Development
 
