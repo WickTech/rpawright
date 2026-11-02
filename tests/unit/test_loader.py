@@ -20,7 +20,8 @@ def test_schema_error_reports_step_index(tmp_path: Path) -> None:
     p.write_text("version: 1\nname: x\nsteps:\n  - goto: http://x\n  - click: {}\n")
     with pytest.raises(WorkflowError) as e:
         load_workflow(p)
-    assert "steps[1]" in str(e.value)
+    assert "steps[1].click.target" in str(e.value)
+    assert "GotoStep" not in str(e.value)
 
 
 def test_validate_cli_exit_codes(tmp_path: Path) -> None:
@@ -41,3 +42,12 @@ def test_missing_and_non_mapping_files(tmp_path: Path) -> None:
     p.write_text("- 1\n")
     with pytest.raises(WorkflowError):
         load_workflow(p)
+
+
+def test_non_utf8_file_is_clean_error(tmp_path: Path) -> None:
+    p = tmp_path / "bin.yaml"
+    p.write_bytes(b"\xff\xfe\x00bad")
+    with pytest.raises(WorkflowError):
+        load_workflow(p)
+    r = CliRunner().invoke(app, ["validate", str(p)])
+    assert r.exit_code == 2 and "Traceback" not in r.stdout

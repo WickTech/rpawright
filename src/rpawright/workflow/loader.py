@@ -66,6 +66,8 @@ def load_workflow(path: Path) -> Workflow:
         text = path.read_text(encoding="utf-8")
     except OSError as e:
         raise WorkflowError(path, f"cannot read file ({e.strerror or e})") from e
+    except UnicodeDecodeError as e:
+        raise WorkflowError(path, "file is not valid UTF-8 text") from e
     try:
         data = YAML(typ="safe").load(text)
     except YAMLError as e:
