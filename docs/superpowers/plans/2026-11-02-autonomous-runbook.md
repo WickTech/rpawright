@@ -12,21 +12,15 @@
 - **M1 plan:** `docs/superpowers/plans/2026-11-02-m1-foundation.md`
 - **Repo:** local `~/workspace/open-rpa`, remote `origin` = https://github.com/WickTech/rpawright (public)
 
-## 0. State at handoff (2026-11-02)
+## 0. State (updated after M1 execution)
 
-- Branch `m1-foundation` (based on `main` @ `4e4da80`). Commits on it, oldest first:
-  - `2bc9744` Task 1 scaffold
-  - `8fcae49` README
-  - `f494aa4`, `fb4ea10` Task 2
-  - `a65cdb0` Task 3
-  - `2b023dc`, `4aeffe0` Task 4
-  - `efd8c65` Task 5
-- The SDD ledger for M1 is `.superpowers/sdd/2026-11-02-m1-foundation/progress.md`. It is git-ignored and local only. It holds the pre-flight table, rulings R1–R6, every deferred minor, and the per-task status. Trust it and `git log` over memory.
-- Tasks 1–4 and the README are **complete and reviewed**.
-- **Task 5 is implemented (`efd8c65`) but not reviewed.** It is the next action.
-  - The implementer reported concerns: it added `[tool.coverage.run] concurrency = ["greenlet","thread"]` to pyproject, added `tests/browser/test_steps.py`, and `WaitBody` has no `frame` field.
-- Task 6 is not started.
-- Nothing has been pushed except `main`, which holds docs only.
+This section was a handoff snapshot. M1 is now implemented and in review; for current state use `git log --oneline main..HEAD`, `gh pr list --state all`, the
+current plan's ledger under `.superpowers/sdd/`, and `docs/superpowers/context/2026-11-02-session-context.md`.
+
+- M1 (`m1-foundation`): complete, with the whole-branch review and one fix wave done. The PR is opened by the controller after the push (section 4, A4).
+- Rulings R1-R9 for M1 live in the M1 ledger and are copied into the PR body.
+- Deferred items carried into M2's plan: add browser tests for the xpath, nth and exact locators (needed by M4); `time-sensitive` waits should use the shared poll helper;
+  the conftest `_browser` workaround (a module that uses both the `page` fixture and `run_workflow` still cannot nest Playwright).
 
 ## 1. Authority: what you may do without asking
 
@@ -120,7 +114,7 @@ Milestone anchors. These are the binding spec references plus traps the plan mus
 
 | N | Slug | Spec | Must-handle notes |
 |---|---|---|---|
-| 2 | `m2-steps-flow` | §6.2–6.5, §12 | Remaining step types (§6.4), `if/for_each/call/set`, `inputs` + `rpawright run --input k=v`, Jinja2 `SandboxedEnvironment` with a filter allowlist (`fmt`, `where`, `prev_month`, `default`). The sandbox-escape test `{{ ''.__class__ }}` must fail. `on_error` accepts a step list. CSV, XLSX (openpyxl), `http` (httpx). `http` domain enforcement waits for M3; record a ruling. `call` is confined to `bots/`. File paths are confined to the workspace (no `../`). Regenerate the JSON Schema. Add `frame` to `WaitBody` (deferred minor from Task 5). |
+| 2 | `m2-steps-flow` | §6.2–6.5, §12 | Remaining step types (§6.4), `if/for_each/call/set`, `inputs` + `rpawright run --input k=v`, Jinja2 `SandboxedEnvironment` with a filter allowlist (`fmt`, `where`, `prev_month`, `default`). The sandbox-escape test `{{ ''.__class__ }}` must fail. `on_error` accepts a step list. CSV, XLSX (openpyxl), `http` (httpx). `http` domain enforcement waits for M3; record a ruling. `call` is confined to `bots/`. File paths are confined to the workspace (no `../`). Regenerate the JSON Schema. (`WaitBody.frame` was already added in M1's fix wave.) |
 | 3 | `m3-vault-policy` | §10, §8 | `cryptography>=44` (Argon2id m=64 MiB, t=3, p=4; AES-256-GCM), `keyring`, `RPAWRIGHT_VAULT_KEY` / key file `0600`, atomic writes. Domain-bound secrets give `PolicyViolation` and exit code 3. `allow_domains` is enforced via `context.route`. The redactor masks raw, URL-encoded and base64 forms. Screenshots use `mask=`. Traces are off for secret-using bots unless `--unsafe-trace`. `validate` warns on secret-looking literals. Tests use temp vault dirs and a fake keyring backend, never the real OS keyring. |
 | 4 | `m4-recorder` | §7 | Recorder and `pick`. CI has no display, so the recorder must run headless in tests, driven by Playwright actions with the injected script. Golden-YAML tests. Password fields go to the vault (M3 API). `ruamel.yaml` keeps comments when appending. |
 | 5 | `m5-healer` | §8 | Provider interface plus `groq`, `ollama` and `anthropic` over httpx. **All tests use a fake provider or mocked HTTP; no real API calls.** Model ids come from config, never hard-coded. Strict JSON parsing. Live verification checks uniqueness, visibility and the right kind of element for the action. `heal review` writes a diff only on confirmation (test with CliRunner input). Exit code 4. Reorder suggestions come from step stats; the data may need M6's store, so keep an in-memory or file stub with a ruling, or reorder M5 and M6. |

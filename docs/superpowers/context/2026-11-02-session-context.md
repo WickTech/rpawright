@@ -43,17 +43,18 @@ design conversation stopped. The authoritative design is
 - `Promt.md`: a prompt for auditing a **different repo (Task-Master)**. Not related to rpawright and
   not acted on. Its Robocorp video link was noted as background.
 
-## State (updated 2026-11-02, model handoff Opus -> Sonnet)
-- Spec **approved**. Public repo **https://github.com/WickTech/rpawright** created; `main` holds docs only.
-- The user deleted `Promt.md` and `core-features of UI-path.md`.
-- M1 plan `docs/superpowers/plans/2026-11-02-m1-foundation.md` is being executed **subagent-driven** on branch
-  `m1-foundation` (not pushed).
-  - Done and reviewed: Task 1 scaffold, README, Task 2 models/loader/validate, Task 3 JSON Schema, Task 4 locator fallback.
-  - Task 5 (engine + `run`) is implemented as `efd8c65` and **awaits review**.
-  - Task 6 is not started.
-- The ledger with rulings R1–R6 and the deferred minors is at `.superpowers/sdd/2026-11-02-m1-foundation/progress.md` (local, git-ignored).
-- The user asked for **autonomous completion** with Sonnet as controller. The operating manual is
-  `docs/superpowers/plans/2026-11-02-autonomous-runbook.md`, which covers authority, stop points, model routing, M1 finish, M2–M7, and recovery.
+## State (updated 2026-11-02, after M1 execution)
+- Spec approved. Public repo https://github.com/WickTech/rpawright.
+- **M1 is complete** on branch `m1-foundation` (all 6 plan tasks plus README, per-task reviews, a whole-branch review and one fix wave).
+  Result: 85 tests, 98% coverage, ruff and mypy strict clean.
+- M1 delivers: typed YAML workflow models, loader with line and step errors, `rpawright validate`, JSON Schema export with a CI drift check,
+  locator fallback (ordered candidates, ambiguity-safe, iframe support), run engine (retry, `on_error`, JSONL log, failure screenshot, optional trace),
+  `rpawright run`, a demo bot with end-to-end tests, and a README with a quick start.
+- The operating manual for the remaining work is `docs/superpowers/plans/2026-11-02-autonomous-runbook.md`
+  (authority, stop points, model routing, M2-M7 steps, recovery). Section 0 there is a snapshot from before M1 finished; for current state trust `git log`,
+  `gh pr list`, and this note.
 
 ## Next steps
-Follow the runbook: section 0 is the state, and section 4 A1 (review Task 5) is the next action.
+1. The user reviews and merges the M1 PR (merge commit or rebase, never squash).
+2. Continue with M2 per the runbook, section 5 (stacked branches).
+3. M3 must route redaction through `RunArtifacts.log` and `.screenshot`, disable traces for bots that use secrets, and mask failure screenshots (see the final M1 review).
