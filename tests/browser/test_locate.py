@@ -95,3 +95,41 @@ def test_frame_not_found_raises(page, site_url) -> None:  # type: ignore[no-unty
             timeout_ms=400,
             step_id="s",
         )
+
+
+def test_erroring_candidate_falls_through(page, site_url) -> None:  # type: ignore[no-untyped-def]
+    page.goto(f"{site_url}/login.html")
+    r = resolve_target(
+        page,
+        [T({"css": "::::"}), T({"xpath": "//*["}), T({"css": "#email"})],
+        frame=None,
+        timeout_ms=2000,
+        step_id="s",
+    )
+    assert r.index == 2
+
+
+def test_only_erroring_candidate_raises_locator_not_found(page, site_url) -> None:  # type: ignore[no-untyped-def]
+    page.goto(f"{site_url}/login.html")
+    with pytest.raises(LocatorNotFound) as e:
+        resolve_target(page, [T({"css": "::::"})], frame=None, timeout_ms=400, step_id="s")
+    assert [c for _, c in e.value.tried] == [0]
+
+
+def test_hidden_element_skipped(page, site_url) -> None:  # type: ignore[no-untyped-def]
+    page.goto(f"{site_url}/hidden.html")
+    r = resolve_target(
+        page,
+        [T({"css": "#hidden"}), T({"role": "button", "name": "Hidden"}), T({"testid": "shown"})],
+        frame=None,
+        timeout_ms=2000,
+        step_id="s",
+    )
+    assert r.index == 2
+
+
+def test_only_hidden_element_raises(page, site_url) -> None:  # type: ignore[no-untyped-def]
+    page.goto(f"{site_url}/hidden.html")
+    with pytest.raises(LocatorNotFound) as e:
+        resolve_target(page, [T({"css": "#hidden"})], frame=None, timeout_ms=400, step_id="s")
+    assert e.value.tried == [("css=#hidden", 1)]

@@ -3,6 +3,7 @@
 import time
 from dataclasses import dataclass
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import FrameLocator, Locator, Page
 
 from rpawright.runner.errors import LocatorNotFound
@@ -69,10 +70,17 @@ def _poll(
     while True:
         tried = []
         for i, t in enumerate(targets):
-            loc = build_locator(scope, t)
-            count = loc.count()
+            count = 0
+            try:
+                loc = build_locator(scope, t)
+                count = loc.count()
+                visible = count == 1 and loc.is_visible()
+            except PlaywrightError:
+                # Invalid selector, strict-mode race, closed target or navigation race:
+                # treat as no match for this poll and keep polling.
+                visible = False
             tried.append((describe(t), count))
-            if count == 1 and loc.is_visible():
+            if visible:
                 return Resolved(locator=loc, index=i)
         if time.monotonic() >= deadline:
             detail = ", ".join(f"{d} ({c} match{'' if c == 1 else 'es'})" for d, c in tried)
