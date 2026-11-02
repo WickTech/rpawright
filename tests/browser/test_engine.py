@@ -28,6 +28,7 @@ def test_login_ok_writes_log(tmp_path: Path, site_url: str) -> None:
     assert res.exit_code == 0 and res.status == "ok"
     lines = (res.run_dir / "log.jsonl").read_text().splitlines()
     assert len(lines) == 5 and json.loads(lines[1])["locator_used"] == "css=#email"
+    assert all(json.loads(x)["event"] == "step" for x in lines)
 
 
 def test_failure_stops_screenshots_exit1(tmp_path: Path, site_url: str) -> None:
@@ -83,6 +84,9 @@ def test_unreachable_goto_is_step_error(tmp_path: Path) -> None:
     )
     res = run_workflow(wf, runs_root=tmp_path)
     assert res.exit_code == 1 and (res.run_dir / "log.jsonl").exists()
+    assert (res.run_dir / "fail-goto-1.png").exists()
+    assert res.failed_step == "goto-1"
+    assert res.steps[0].status == "failed" and res.steps[0].error
 
 
 def test_safe_name_and_step_mode(tmp_path: Path, site_url: str) -> None:
@@ -124,6 +128,20 @@ def test_cli_run_good_bot_exits_0(tmp_path: Path, site_url: str) -> None:
     assert result.exit_code == 0, result.output
     assert "run ok" in result.output
     assert "click-4" in result.output
+    assert "assert-5" in result.output
+
+
+def test_cli_run_failing_bot_exits_1(tmp_path: Path) -> None:
+    bot = tmp_path / "fail.yaml"
+    bot.write_text(
+        "version: 1\nname: fail-demo\npolicy:\n  timeout_ms: 1000\n"
+        "steps:\n  - goto: http://127.0.0.1:9/\n",
+        encoding="utf-8",
+    )
+    result = CliRunner().invoke(app, ["run", str(bot), "--runs-dir", str(tmp_path / "runs")])
+    assert result.exit_code == 1
+    assert "FAILED" in result.output
+    assert "run failed" in result.output
 
 
 def _ok_wf(site_url: str) -> Workflow:

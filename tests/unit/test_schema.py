@@ -6,6 +6,8 @@ from typer.testing import CliRunner
 from rpawright.cli import app
 from rpawright.workflow.schema import workflow_json_schema
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 def test_schema_uses_yaml_surface_names() -> None:
     text = json.dumps(workflow_json_schema())
@@ -15,7 +17,7 @@ def test_schema_uses_yaml_surface_names() -> None:
 
 
 def test_committed_schema_is_current() -> None:
-    committed = json.loads(Path("schema/workflow.schema.json").read_text())
+    committed = json.loads((REPO_ROOT / "schema" / "workflow.schema.json").read_text())
     assert committed == workflow_json_schema()
 
 

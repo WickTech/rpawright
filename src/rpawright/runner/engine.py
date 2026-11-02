@@ -88,7 +88,9 @@ def run_workflow(
                     step_id = step.id
                     if step_mode:
                         confirm(step_id)
-                    timeout_ms = step.timeout_ms or wf.policy.timeout_ms
+                    timeout_ms = (
+                        step.timeout_ms if step.timeout_ms is not None else wf.policy.timeout_ms
+                    )
                     started = time.monotonic()
                     attempts, locator_used, error = _attempt_step(page, step, step_id, timeout_ms)
                     duration_ms = int((time.monotonic() - started) * 1000)
@@ -109,7 +111,7 @@ def run_workflow(
                         error=error,
                     )
                     records.append(record)
-                    artifacts.log(dict(asdict(record)))
+                    artifacts.log({"event": "step", **asdict(record)})
                     if status == "failed":
                         failed_step = step_id
                         break

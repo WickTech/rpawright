@@ -58,3 +58,19 @@ def test_version_must_be_1_and_defaults() -> None:
 def test_wait_body_needs_exactly_one_mode() -> None:
     with pytest.raises(ValidationError):
         Workflow.model_validate(wf([{"wait": {"ms": 5, "url_contains": "x"}}]))
+
+
+@pytest.mark.parametrize("bad", [0, -1])
+def test_timeouts_must_be_positive(bad: int) -> None:
+    with pytest.raises(ValidationError):
+        Workflow.model_validate({**wf([{"goto": "http://x"}]), "policy": {"timeout_ms": bad}})
+    with pytest.raises(ValidationError):
+        Workflow.model_validate(wf([{"goto": "http://x", "timeout_ms": bad}]))
+
+
+def test_negative_waits_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Workflow.model_validate(wf([{"wait": -1}]))
+    with pytest.raises(ValidationError):
+        Workflow.model_validate(wf([{"wait": {"ms": -1}}]))
+    Workflow.model_validate(wf([{"wait": 0}, {"wait": {"ms": 0}}]))

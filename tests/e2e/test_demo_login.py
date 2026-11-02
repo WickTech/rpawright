@@ -8,16 +8,17 @@ from typer.testing import CliRunner
 
 from rpawright.cli import app
 
-EXAMPLE = Path("examples/bots/demo-login.yaml")
+EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "bots" / "demo-login.yaml"
 
 
 def run_example(tmp_path: Path, site_url: str, page_name: str) -> Any:
     src = EXAMPLE.read_text(encoding="utf-8")
+    base = "http://127.0.0.1:8765"
+    old_url = f"{base}/login.html"
+    assert old_url in src
     bot = tmp_path / "bot.yaml"
-    bot.write_text(
-        src.replace("http://127.0.0.1:8765", site_url).replace("login.html", page_name),
-        encoding="utf-8",
-    )
+    bot.write_text(src.replace(old_url, f"{site_url}/{page_name}"), encoding="utf-8")
+    assert f"{site_url}/{page_name}" in bot.read_text(encoding="utf-8")
     return CliRunner().invoke(app, ["run", str(bot), "--runs-dir", str(tmp_path / "runs")])
 
 
@@ -25,6 +26,12 @@ def read_log(tmp_path: Path) -> list[dict[str, Any]]:
     logs = list((tmp_path / "runs").glob("*/*/log.jsonl"))
     assert len(logs) == 1
     return [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
+
+
+def test_log_records_have_step_event(tmp_path: Path, site_url: str) -> None:
+    result = run_example(tmp_path, site_url, "login.html")
+    assert result.exit_code == 0, result.output
+    assert all(r["event"] == "step" for r in read_log(tmp_path))
 
 
 def test_example_validates() -> None:

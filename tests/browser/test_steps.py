@@ -83,3 +83,92 @@ def test_assert_visible_false(page: Page, site_url: str) -> None:
             page,
             {"assert": {"target": [{"css": "#hidden"}], "visible": False, "text_contains": "x"}},
         )
+
+
+def test_assert_hidden_fails_when_any_match_is_visible(page: Page, site_url: str) -> None:
+    page.goto(f"{site_url}/multi_hidden.html")
+    with pytest.raises(AssertionFailed, match="expected hidden, actual visible"):
+        run_step(
+            page,
+            {"assert": {"target": [{"role": "button", "name": "Save"}], "visible": False}},
+            timeout_ms=300,
+        )
+    with pytest.raises(StepError, match="still visible"):
+        run_step(
+            page,
+            {"wait": {"target": [{"text": "Save"}], "state": "hidden"}},
+            timeout_ms=300,
+        )
+
+
+def test_assert_hidden_honors_frame(page: Page, site_url: str) -> None:
+    page.goto(f"{site_url}/frame.html")
+    frame = [{"css": "iframe"}]
+    with pytest.raises(AssertionFailed, match="expected hidden, actual visible"):
+        run_step(
+            page,
+            {"assert": {"target": [{"css": "#email"}], "frame": frame, "visible": False}},
+            timeout_ms=300,
+        )
+    run_step(page, {"assert": {"target": [{"css": "#absent"}], "frame": frame, "visible": False}})
+    # A missing frame counts as hidden.
+    run_step(
+        page,
+        {
+            "assert": {
+                "target": [{"css": "#email"}],
+                "frame": [{"css": "iframe#nope"}],
+                "visible": False,
+            }
+        },
+        timeout_ms=300,
+    )
+
+
+def test_wait_hidden_honors_frame(page: Page, site_url: str) -> None:
+    page.goto(f"{site_url}/frame.html")
+    frame = [{"css": "iframe"}]
+    with pytest.raises(StepError, match="still visible"):
+        run_step(
+            page,
+            {"wait": {"target": [{"css": "#email"}], "frame": frame, "state": "hidden"}},
+            timeout_ms=300,
+        )
+    run_step(page, {"wait": {"target": [{"css": "#absent"}], "frame": frame, "state": "hidden"}})
+    run_step(
+        page,
+        {
+            "wait": {
+                "target": [{"css": "#email"}],
+                "frame": [{"css": "iframe#nope"}],
+                "state": "hidden",
+            }
+        },
+        timeout_ms=300,
+    )
+
+
+def test_assert_url_contains_waits_for_redirect(page: Page, site_url: str) -> None:
+    page.goto(f"{site_url}/redirect.html")
+    run_step(page, {"assert": {"url_contains": "dashboard"}}, timeout_ms=5000)
+
+
+def test_assert_text_contains_waits_for_change(page: Page, site_url: str) -> None:
+    page.goto(f"{site_url}/text_change.html")
+    run_step(
+        page, {"assert": {"target": [{"css": "#status"}], "text_contains": "Done"}}, timeout_ms=5000
+    )
+
+
+def test_assert_url_and_text_failures_report_expected_and_actual(page: Page, site_url: str) -> None:
+    page.goto(f"{site_url}/login.html")
+    with pytest.raises(AssertionFailed) as e:
+        run_step(page, {"assert": {"url_contains": "dashboard"}}, timeout_ms=300)
+    assert "'dashboard'" in str(e.value) and "login.html" in str(e.value)
+    with pytest.raises(AssertionFailed) as e:
+        run_step(
+            page,
+            {"assert": {"target": [{"css": "h1"}], "text_contains": "Never"}},
+            timeout_ms=300,
+        )
+    assert "'Never'" in str(e.value) and "'Sign in'" in str(e.value)

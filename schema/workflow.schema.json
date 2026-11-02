@@ -114,6 +114,7 @@
         "timeout_ms": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0,
               "type": "integer"
             },
             {
@@ -171,6 +172,7 @@
         "timeout_ms": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0,
               "type": "integer"
             },
             {
@@ -266,6 +268,7 @@
         "timeout_ms": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0,
               "type": "integer"
             },
             {
@@ -324,6 +327,7 @@
         "timeout_ms": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0,
               "type": "integer"
             },
             {
@@ -367,6 +371,7 @@
         },
         "timeout_ms": {
           "default": 15000,
+          "exclusiveMinimum": 0,
           "title": "Timeout Ms",
           "type": "integer"
         }
@@ -467,6 +472,7 @@
         "timeout_ms": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0,
               "type": "integer"
             },
             {
@@ -647,9 +653,25 @@
     "WaitBody": {
       "additionalProperties": false,
       "properties": {
+        "frame": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Target"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame"
+        },
         "ms": {
           "anyOf": [
             {
+              "minimum": 0,
               "type": "integer"
             },
             {
@@ -737,6 +759,7 @@
         "timeout_ms": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0,
               "type": "integer"
             },
             {
@@ -749,6 +772,7 @@
         "wait": {
           "anyOf": [
             {
+              "minimum": 0,
               "type": "integer"
             },
             {

@@ -1,6 +1,6 @@
 """Typed models for rpawright YAML workflows."""
 
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -47,7 +47,7 @@ class Policy(_Model):
     # allow_domains and heal are parsed and validated in M1 but not enforced.
     allow_domains: list[str] = Field(default_factory=list)
     headless: bool = True
-    timeout_ms: int = 15000
+    timeout_ms: int = Field(default=15000, gt=0)
     heal: Literal["propose", "apply_runtime", "off"] = "propose"
 
 
@@ -55,7 +55,7 @@ class StepCommon(_Model):
     id: str | None = None
     retry: Retry | None = None
     on_error: Literal["fail", "continue"] = "fail"
-    timeout_ms: int | None = None
+    timeout_ms: int | None = Field(default=None, gt=0)
 
 
 class TargetBody(_Model):
@@ -74,8 +74,9 @@ class PressBody(_Model):
 
 
 class WaitBody(_Model):
-    ms: int | None = None
+    ms: int | None = Field(default=None, ge=0)
     target: list[Target] | None = None
+    frame: list[Target] | None = None
     state: Literal["visible", "hidden"] = "visible"
     url_contains: str | None = None
 
@@ -118,7 +119,7 @@ class PressStep(StepCommon):
 
 
 class WaitStep(StepCommon):
-    wait: int | WaitBody
+    wait: Annotated[int, Field(ge=0)] | WaitBody
 
 
 class AssertStep(StepCommon):

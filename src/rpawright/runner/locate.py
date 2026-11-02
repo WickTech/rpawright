@@ -90,6 +90,27 @@ def _poll(
         page.wait_for_timeout(poll_ms)
 
 
+def frame_scope(
+    page: Page,
+    frame: list[Target],
+    *,
+    deadline: float,
+    poll_ms: int,
+    step_id: str,
+) -> FrameLocator:
+    """Resolve the frame candidates to a FrameLocator; raises LocatorNotFound at the deadline."""
+    hit = _poll(
+        page,
+        page,
+        frame,
+        deadline=deadline,
+        poll_ms=poll_ms,
+        step_id=step_id,
+        what="frame candidate",
+    )
+    return hit.locator.frame_locator(":scope")
+
+
 def resolve_target(
     page: Page,
     targets: list[Target],
@@ -103,16 +124,7 @@ def resolve_target(
     deadline = time.monotonic() + timeout_ms / 1000
     scope: Page | FrameLocator = page
     if frame:
-        frame_hit = _poll(
-            page,
-            page,
-            frame,
-            deadline=deadline,
-            poll_ms=poll_ms,
-            step_id=step_id,
-            what="frame candidate",
-        )
-        scope = frame_hit.locator.frame_locator(":scope")
+        scope = frame_scope(page, frame, deadline=deadline, poll_ms=poll_ms, step_id=step_id)
     return _poll(
         page,
         scope,
