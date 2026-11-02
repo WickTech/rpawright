@@ -43,17 +43,17 @@ design conversation stopped. The authoritative design is
 - `Promt.md`: a prompt for auditing a **different repo (Task-Master)**. Not related to rpawright and
   not acted on. Its Robocorp video link was noted as background.
 
-## State at end of session
-- Repo: `~/workspace/open-rpa`, branch `main`, **no remote**. Commits: `dbc14e5` (spec + context), `bb1f6b7` (rename to rpawright).
-- **No code written.**
+## State (updated 2026-11-02, model handoff Opus -> Sonnet)
+- Spec **approved**. Public repo **https://github.com/WickTech/rpawright** created; `main` holds docs only.
+- The user deleted `Promt.md` and `core-features of UI-path.md`.
+- M1 plan `docs/superpowers/plans/2026-11-02-m1-foundation.md` is being executed **subagent-driven** on branch
+  `m1-foundation` (not pushed).
+  - Done and reviewed: Task 1 scaffold, README, Task 2 models/loader/validate, Task 3 JSON Schema, Task 4 locator fallback.
+  - Task 5 (engine + `run`) is implemented as `efd8c65` and **awaits review**.
+  - Task 6 is not started.
+- The ledger with rulings R1–R6 and the deferred minors is at `.superpowers/sdd/2026-11-02-m1-foundation/progress.md` (local, git-ignored).
+- The user asked for **autonomous completion** with Sonnet as controller. The operating manual is
+  `docs/superpowers/plans/2026-11-02-autonomous-runbook.md`, which covers authority, stop points, model routing, M1 finish, M2–M7, and recovery.
 
-## Pending (ask the user; nothing done yet)
-1. **Spec approval.** The user has not yet explicitly approved the written spec. Ask for approval or changes.
-2. **Create the public repo and push.** This needs an explicit yes, because it is a public action.
-   Planned commands: `gh repo create WickTech/rpawright --public --source . --push`, pushing `main`
-   with the docs commits only; leave `Promt.md` and `core-features of UI-path.md` untracked.
-
-## Next steps after approval
-1. Invoke `superpowers:writing-plans`. Write the implementation plan for M1–M7 to `docs/superpowers/plans/`.
-2. The user picks the execution method (subagent-driven, inline, or the `/ship` pipeline).
-3. One PR per milestone; the user merges with a merge commit or rebase, never squash.
+## Next steps
+Follow the runbook: section 0 is the state, and section 4 A1 (review Task 5) is the next action.
