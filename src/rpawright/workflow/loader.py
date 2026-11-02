@@ -39,6 +39,18 @@ _STEP_MODELS = {
 }
 
 
+_COMMON_FIELDS = ("id", "retry", "on_error", "timeout_ms")
+
+
+def _clean_msg(msg: str) -> str:
+    return msg.removeprefix("Value error, ")
+
+
+def _join(loc: tuple[int | str, ...], msg: str) -> str:
+    where = _format_loc(loc)
+    return f"{where}: {_clean_msg(msg)}" if where else _clean_msg(msg)
+
+
 def _first_error(exc: ValidationError, data: dict[str, Any]) -> str:
     """Format the most relevant error.
 
@@ -52,12 +64,18 @@ def _first_error(exc: ValidationError, data: dict[str, Any]) -> str:
         index = first[1]
         step = steps[index] if isinstance(index, int) and index < len(steps) else None
         actions = [k for k in step if k in _STEP_MODELS] if isinstance(step, dict) else []
+        if isinstance(step, dict) and len(actions) != 1:
+            found = [k for k in step if k not in _COMMON_FIELDS]
+            return (
+                f"steps[{index}]: a step needs exactly one action key "
+                f"({', '.join(_STEP_MODELS)}); got {found}"
+            )
         if len(actions) == 1:
             for err in errors:
                 loc = err["loc"]
                 if loc[:2] == ("steps", index) and loc[2:3] == (_STEP_MODELS[actions[0]],):
-                    return f"{_format_loc((*loc[:2], *loc[3:]))}: {err['msg']}"
-    return f"{_format_loc(first)}: {errors[0]['msg']}"
+                    return _join((*loc[:2], *loc[3:]), err["msg"])
+    return _join(first, errors[0]["msg"])
 
 
 def load_workflow(path: Path) -> Workflow:

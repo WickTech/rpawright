@@ -51,3 +51,36 @@ def test_non_utf8_file_is_clean_error(tmp_path: Path) -> None:
         load_workflow(p)
     r = CliRunner().invoke(app, ["validate", str(p)])
     assert r.exit_code == 2 and "Traceback" not in r.stdout
+
+
+def _msg(tmp_path: Path, steps: str) -> str:
+    p = tmp_path / "b.yaml"
+    p.write_text(f"version: 1\nname: x\nsteps:\n{steps}")
+    with pytest.raises(WorkflowError) as e:
+        load_workflow(p)
+    assert "GotoStep" not in e.value.message
+    return e.value.message
+
+
+def test_zero_action_keys_message(tmp_path: Path) -> None:
+    assert _msg(tmp_path, "  - id: a\n") == (
+        "steps[0]: a step needs exactly one action key "
+        "(goto, click, fill, press, wait, assert); got []"
+    )
+
+
+def test_two_action_keys_message(tmp_path: Path) -> None:
+    msg = _msg(tmp_path, "  - goto: http://x\n    click: {target: [{css: a}]}\n    id: a\n")
+    assert msg == (
+        "steps[0]: a step needs exactly one action key "
+        "(goto, click, fill, press, wait, assert); got ['goto', 'click']"
+    )
+
+
+def test_duplicate_id_message(tmp_path: Path) -> None:
+    msg = _msg(tmp_path, "  - {id: q, goto: http://x}\n  - {id: q, goto: http://y}\n")
+    assert msg == "duplicate step id 'q'"
+    p = tmp_path / "b.yaml"
+    with pytest.raises(WorkflowError) as e:
+        load_workflow(p)
+    assert str(e.value) == f"{p}: duplicate step id 'q'"
