@@ -42,3 +42,7 @@ packages = ["rpawright"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=rpawright --cov-report=term-missing --cov-fail-under=85"
+
+[tool.coverage.run]
+# Playwright's sync API runs user code inside greenlets; without this coverage misses it.
+concurrency = ["greenlet", "thread"]

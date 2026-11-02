@@ -7,6 +7,7 @@ from typing import Annotated
 import typer
 
 from rpawright import __version__
+from rpawright.runner.engine import run_workflow
 from rpawright.workflow.loader import WorkflowError, load_workflow
 from rpawright.workflow.schema import workflow_json_schema
 
@@ -64,3 +65,36 @@ def schema(
     else:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(text.encode("utf-8"))
+
+
+@app.command()
+def run(
+    bot: Annotated[Path, typer.Argument(help="Workflow YAML file to run.")],
+    headed: Annotated[bool, typer.Option("--headed", help="Show the browser window.")] = False,
+    step: Annotated[bool, typer.Option("--step", help="Pause before each step.")] = False,
+    trace: Annotated[bool, typer.Option("--trace", help="Save a Playwright trace.zip.")] = False,
+    runs_dir: Annotated[
+        Path, typer.Option("--runs-dir", help="Where run artifacts are written.")
+    ] = Path("runs"),
+) -> None:
+    """Run a bot; exit 0 ok, 1 step failed, 2 invalid bot."""
+    try:
+        wf = load_workflow(bot)
+    except WorkflowError as e:
+        typer.echo(f"error  {e}")
+        raise typer.Exit(code=2) from e
+    result = run_workflow(wf, runs_root=runs_dir, headed=headed, step_mode=step, trace=trace)
+    for rec in result.steps:
+        if rec.status == "ok":
+            detail = (
+                f"({rec.locator_used}, {rec.duration_ms} ms)"
+                if rec.locator_used
+                else (f"({rec.duration_ms} ms)")
+            )
+            typer.echo(f"{'ok':<9} {rec.step_id:<10} {detail}")
+        else:
+            label = "FAILED" if rec.status == "failed" else "CONTINUED"
+            typer.echo(f"{label:<9} {rec.step_id:<10} {rec.error}")
+    typer.echo(f"run {result.status} — {result.run_dir}")
+    if result.exit_code:
+        raise typer.Exit(code=result.exit_code)
