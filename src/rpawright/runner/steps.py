@@ -129,6 +129,17 @@ def _assert(ctx: StepContext, step: Step) -> None:
         )
     if body.target is None:
         return
+    if body.visible is False:
+        if body.text_contains is not None:
+            raise StepError(ctx.step_id, "assert: text_contains requires a visible element")
+        try:
+            _wait_hidden(ctx, body.target)
+        except StepError as e:
+            raise AssertionFailed(
+                ctx.step_id,
+                "expected hidden, actual visible: " + ", ".join(describe(t) for t in body.target),
+            ) from e
+        return
     resolved = _resolve(ctx, body.target, body.frame)
     loc = resolved.locator
     if body.text_contains is not None:

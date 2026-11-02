@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from rpawright.cli import app
@@ -123,3 +124,31 @@ def test_cli_run_good_bot_exits_0(tmp_path: Path, site_url: str) -> None:
     assert result.exit_code == 0, result.output
     assert "run ok" in result.output
     assert "click-4" in result.output
+
+
+def _ok_wf(site_url: str) -> Workflow:
+    return Workflow.model_validate(
+        {"version": 1, "name": "t", "steps": [{"goto": f"{site_url}/login.html"}]}
+    )
+
+
+def test_trace_writes_zip(tmp_path: Path, site_url: str) -> None:
+    res = run_workflow(_ok_wf(site_url), runs_root=tmp_path, trace=True)
+    assert res.exit_code == 0
+    assert (res.run_dir / "trace.zip").exists()
+
+
+def test_trace_stop_failure_is_logged(
+    tmp_path: Path, site_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from playwright.sync_api import Error as PlaywrightError
+    from playwright.sync_api._generated import Tracing
+
+    def boom(self: object, **kwargs: object) -> None:
+        raise PlaywrightError("trace boom\nsecond line")
+
+    monkeypatch.setattr(Tracing, "stop", boom)
+    res = run_workflow(_ok_wf(site_url), runs_root=tmp_path, trace=True)
+    assert res.exit_code == 0 and res.status == "ok"
+    records = [json.loads(x) for x in (res.run_dir / "log.jsonl").read_text().splitlines()]
+    assert {"event": "trace_failed", "error": "trace boom"} in records

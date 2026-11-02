@@ -18,8 +18,17 @@ class RunArtifacts:
 
     def __init__(self, root: Path, bot_name: str) -> None:
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        self.dir = root / safe_name(bot_name) / stamp
-        self.dir.mkdir(parents=True, exist_ok=True)
+        parent = root / safe_name(bot_name)
+        parent.mkdir(parents=True, exist_ok=True)
+        for n in range(1, 101):
+            candidate = parent / (stamp if n == 1 else f"{stamp}-{n}")
+            try:
+                candidate.mkdir()
+            except FileExistsError:
+                continue
+            self.dir = candidate
+            return
+        raise FileExistsError(f"could not create a unique run directory under {parent}")
 
     def log(self, record: dict[str, object]) -> None:
         with (self.dir / "log.jsonl").open("a", encoding="utf-8") as f:

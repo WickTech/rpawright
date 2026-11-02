@@ -66,3 +66,20 @@ def test_assert_failures(page: Page, site_url: str) -> None:
 def test_goto_failure_is_step_error(page: Page) -> None:
     with pytest.raises(StepError, match="goto"):
         run_step(page, {"goto": "http://127.0.0.1:9/"}, timeout_ms=1000)
+
+
+def test_assert_visible_false(page: Page, site_url: str) -> None:
+    page.goto(f"{site_url}/hidden.html")
+    run_step(page, {"assert": {"target": [{"css": "#hidden"}], "visible": False}})
+    run_step(page, {"assert": {"target": [{"css": "#absent"}], "visible": False}})
+    with pytest.raises(AssertionFailed, match="expected hidden, actual visible"):
+        run_step(
+            page,
+            {"assert": {"target": [{"testid": "shown"}], "visible": False}},
+            timeout_ms=300,
+        )
+    with pytest.raises(StepError, match="text_contains requires a visible element"):
+        run_step(
+            page,
+            {"assert": {"target": [{"css": "#hidden"}], "visible": False, "text_contains": "x"}},
+        )

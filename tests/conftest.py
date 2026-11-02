@@ -31,7 +31,9 @@ def site_url() -> Iterator[str]:
         server.server_close()
 
 
-@pytest.fixture(scope="session")
+# Module scope: sync_playwright() cannot nest, so run_workflow tests (which start their own)
+# must not run while a session-wide Playwright is still open.
+@pytest.fixture(scope="module")
 def _browser() -> Iterator[Browser]:
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)

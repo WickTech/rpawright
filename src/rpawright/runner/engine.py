@@ -117,8 +117,11 @@ def run_workflow(
                 if trace:
                     try:
                         context.tracing.stop(path=str(artifacts.dir / "trace.zip"))
-                    except PlaywrightError:
-                        pass
+                    except PlaywrightError as e:
+                        first = str(e).strip().splitlines()
+                        artifacts.log(
+                            {"event": "trace_failed", "error": first[0] if first else repr(e)}
+                        )
         finally:
             browser.close()
     ok = failed_step is None
