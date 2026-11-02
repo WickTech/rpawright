@@ -1,5 +1,6 @@
 """Command line entry point for rpawright."""
 
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -7,6 +8,7 @@ import typer
 
 from rpawright import __version__
 from rpawright.workflow.loader import WorkflowError, load_workflow
+from rpawright.workflow.schema import workflow_json_schema
 
 app = typer.Typer(help="rpawright: self-healing web RPA driven by YAML bots.", no_args_is_help=True)
 
@@ -46,3 +48,19 @@ def validate(
             typer.echo(f"ok  {path}")
     if failed:
         raise typer.Exit(code=2)
+
+
+@app.command()
+def schema(
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="Write the schema to this file instead of stdout."),
+    ] = None,
+) -> None:
+    """Print the workflow JSON Schema, or write it to --out."""
+    text = json.dumps(workflow_json_schema(), indent=2, sort_keys=True) + "\n"
+    if out is None:
+        typer.echo(text, nl=False)
+    else:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(text.encode("utf-8"))

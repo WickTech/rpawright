@@ -16,6 +16,7 @@ jobs:
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run mypy
+      - run: uv run rpawright schema --out schema/workflow.schema.json && git diff --exit-code schema/
 
   test:
     runs-on: ${{ matrix.os }}
