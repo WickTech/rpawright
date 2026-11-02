@@ -1,4 +1,4 @@
-# Session context: 2026-11-02 (design brainstorm)
+# Session context: 2026-11-02 (rpawright design brainstorm)
 
 Handoff note for the next session. The authoritative design is
 `docs/superpowers/specs/2026-11-02-open-rpa-design.md`.
@@ -26,6 +26,6 @@ Handoff note for the next session. The authoritative design is
 - **No code written.** Next gate: the user reviews the spec, then the `superpowers:writing-plans` skill produces the implementation plan, then the user picks how it gets executed.
 
 ## Next steps
-1. User reviews the spec (§14 open questions: package name on PyPI; GitHub org and visibility).
+1. User reviews the spec. §14 is resolved: name `rpawright`, public repo `WickTech/rpawright` (not created yet).
 2. Write the implementation plan for M1–M7 (one PR per milestone; the user merges with a merge commit or rebase, never squash).
 3. Begin M1 after the plan is approved.

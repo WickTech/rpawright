@@ -1,13 +1,14 @@
-# open-rpa: Design Spec
+# rpawright: Design Spec
 
 - **Date:** 2026-11-02
 - **Status:** Draft, awaiting user review
 - **Author:** Rishabh Verma (with Claude Code)
-- **Repo:** `~/workspace/open-rpa` (local, no remote yet)
+- **Repo:** local folder `~/workspace/open-rpa`; public GitHub repo `github.com/WickTech/rpawright` (not created yet)
+- **Name:** `rpawright`, used for the PyPI package, the CLI command, and the Python import name. PyPI name verified free on 2026-11-02.
 
 ## 1. Summary
 
-open-rpa is an open-source, Python-based Robotic Process Automation (RPA) tool for **web** automation. A user records a browser task once; the recorder writes a readable, git-friendly YAML workflow. Bots run from a CLI or on a schedule via a local daemon. When a site changes and a recorded element can no longer be found, the runner tries the step's fallback locators, then asks a pluggable LLM for replacement locators, verifies them against the live page, and stores a repair proposal that the user approves before the YAML is changed.
+rpawright is an open-source, Python-based Robotic Process Automation (RPA) tool for **web** automation. A user records a browser task once; the recorder writes a readable, git-friendly YAML workflow. Bots run from a CLI or on a schedule via a local daemon. When a site changes and a recorded element can no longer be found, the runner tries the step's fallback locators, then asks a pluggable LLM for replacement locators, verifies them against the live page, and stores a repair proposal that the user approves before the YAML is changed.
 
 It borrows UiPath's concepts (activities, selectors, assets, credential store, triggers, retry scopes, run monitoring) but is a clean-room design. No UiPath code, binaries, or proprietary formats are reverse-engineered or copied.
 
@@ -19,7 +20,7 @@ It borrows UiPath's concepts (activities, selectors, assets, credential store, t
 - Self-healing selectors: fallback chain, then LLM proposal, then human-approved patch.
 - Unattended runs: cron/interval scheduling, per-run process isolation, run history, notifications.
 - Secrets handled safely: encrypted vault, domain-bound secrets, redaction everywhere.
-- Ship as a public open-source package installable with `pipx install open-rpa` on Linux, macOS, and Windows.
+- Ship as a public open-source package installable with `pipx install rpawright` on Linux, macOS, and Windows.
 
 ### Non-goals (v1)
 - Visual drag-and-drop designer (UiPath Studio canvas).
@@ -47,17 +48,17 @@ Rejected alternatives: (B) Rust engine with a Python Playwright driver over JSON
 
 ## 4. UiPath feature mapping
 
-| UiPath feature | open-rpa equivalent | Phase |
+| UiPath feature | rpawright equivalent | Phase |
 |---|---|---|
 | Activities library | Built-in step types (§6.4) | v1 |
 | Variables / arguments | `inputs:`, `vars:`, `set:`, sandboxed `{{ }}` expressions | v1 |
 | Control flow | `if`, `for_each`, `call` | v1 |
 | Try/Catch, Retry Scope | `retry:` and `on_error:` per step or block | v1 |
-| Selectors + UI Explorer | Multi-locator `target` lists + `open-rpa pick` | v1 |
+| Selectors + UI Explorer | Multi-locator `target` lists + `rpawright pick` | v1 |
 | Debugging / breakpoints | `--headed`, `--step`, `pause:` step, Playwright traces | v1 |
 | Assets + Credential store | `assets.yaml` + encrypted vault | v1 |
 | Time triggers | `schedules.yaml` + daemon | v1 |
-| Jobs / logs monitoring | SQLite run history + `open-rpa runs` | v1 |
+| Jobs / logs monitoring | SQLite run history + `rpawright runs` | v1 |
 | Packages / versioning | Git (bots are YAML) | v1 |
 | Attended vs unattended robot | `--headed` vs headless | v1 |
 | AI Center | LLM healer (v1); `llm_extract` step (v2) | v1/v2 |
@@ -72,8 +73,8 @@ Rejected alternatives: (B) Rust engine with a Python Playwright driver over JSON
 ## 5. Architecture
 
 ```
-open-rpa/
-├── src/open_rpa/
+rpawright/   (local folder: ~/workspace/open-rpa)
+├── src/rpawright/
 │   ├── cli.py         Typer: record | pick | run | validate | schema | heal | vault | daemon | schedule | runs | init
 │   ├── workflow/      models.py · loader.py · expressions.py · schema.py
 │   ├── runner/        engine.py · steps/ · locate.py · artifacts.py
@@ -165,14 +166,14 @@ steps:
 - `secret.*` values are resolved only when a step executes. They are never stored in `vars`, never logged, and never sent to the LLM.
 
 ### 6.6 Validation and schema
-- Pydantic v2 models are the single source of truth. `open-rpa schema` generates `schema/workflow.schema.json`, which is committed and drift-checked in CI and usable for editor autocomplete via yaml-language-server.
-- `open-rpa validate bots/*.yaml` checks structure, unique ids, expression syntax, and secret-looking literals (warning).
+- Pydantic v2 models are the single source of truth. `rpawright schema` generates `schema/workflow.schema.json`, which is committed and drift-checked in CI and usable for editor autocomplete via yaml-language-server.
+- `rpawright validate bots/*.yaml` checks structure, unique ids, expression syntax, and secret-looking literals (warning).
 - `version: 1` enables future format migrations.
 
 ## 7. Recorder and `pick`
 
 ### Commands
-`open-rpa record <bot.yaml> --url <url> [--append]`; `open-rpa pick --url <url>`; `open-rpa pick --bot <bot.yaml> --step <id>`.
+`rpawright record <bot.yaml> --url <url> [--append]`; `rpawright pick --url <url>`; `rpawright pick --bot <bot.yaml> --step <id>`.
 
 ### Mechanism
 - Headed Playwright Chromium. The injected script is added with `context.add_init_script` and reaches every frame. Events go to Python through `expose_binding`.
@@ -203,7 +204,7 @@ URL typed at start or in the toolbar → `goto`; click → `click` (any navigati
 ## 8. Runner and self-healing
 
 ### Commands
-`open-rpa run <bot.yaml> [--input k=v]... [--headed] [--step] [--trace] [--unsafe-trace]`; `open-rpa heal review [--run <id>]`.
+`rpawright run <bot.yaml> [--input k=v]... [--headed] [--step] [--trace] [--unsafe-trace]`; `rpawright heal review [--run <id>]`.
 
 ### Locator resolution
 - Candidate types map to Playwright: `get_by_role`, `get_by_label`, `get_by_text`, `get_by_test_id`, `locator(css|xpath)`, plus frame and nth handling.
@@ -225,7 +226,7 @@ URL typed at start or in the toolbar → `goto`; click → `click` (any navigati
 The YAML is changed only by `heal review`, which shows the diff and requires confirmation. The LLM may only return locators. It cannot add steps, change values, or navigate.
 
 ### Providers
-`groq` (default), `ollama`, `anthropic`. Model ids are set in `~/.config/open-rpa/config.toml` (not hard-coded). API keys are stored in the vault.
+`groq` (default), `ollama`, `anthropic`. Model ids are set in `~/.config/rpawright/config.toml` (not hard-coded). API keys are stored in the vault.
 
 ### Errors
 | Error | Retried | Healing |
@@ -265,11 +266,11 @@ schedules:
 notify:
   on_failure:
     - webhook: https://ntfy.sh/my-rpa-topic
-    - command: notify-send "open-rpa" "{{ bot }} failed ({{ exit_code }})"
+    - command: notify-send "rpawright" "{{ bot }} failed ({{ exit_code }})"
 ```
 
 ### Commands
-`open-rpa daemon [--foreground] | status | stop | install`; `open-rpa schedule ls | run <bot>`; `open-rpa runs ls [--bot] [--failed] | show <id> | prune --older <age>`.
+`rpawright daemon [--foreground] | status | stop | install`; `rpawright schedule ls | run <bot>`; `rpawright runs ls [--bot] [--failed] | show <id> | prune --older <age>`.
 
 ### Daemon behaviour
 - APScheduler, using cron and interval triggers.
@@ -277,11 +278,11 @@ notify:
 - No overlap per bot (`skipped_overlap`). A global `max_parallel` semaphore limits concurrent runs.
 - Misfires: coalesce, and run once on wake if less than 1 h late; older misfires are recorded as `missed`.
 - Hot-reloads `schedules.yaml` on change. An invalid file keeps the previous schedule and logs an error.
-- Single-instance lock at `~/.local/state/open-rpa/daemon.lock`.
+- Single-instance lock at `~/.local/state/rpawright/daemon.lock`.
 - Notifications (webhook or local command) on `on_failure`, `on_heal_proposal`, or `always`. Messages are redacted, and template values are passed through `shlex.quote`.
 - `daemon install` sets up autostart with systemd `--user` (Linux), launchd (macOS), or Task Scheduler (Windows). On WSL, systemd needs `systemd=true` in `wsl.conf` and the VM idles out, so the docs recommend running the daemon on the Windows side.
 
-### SQLite (`~/.local/share/open-rpa/open-rpa.db`)
+### SQLite (`~/.local/share/rpawright/rpawright.db`)
 ```
 runs(id, bot, bot_hash, trigger, started_at, ended_at, status, exit_code,
      failed_step, heal_pending, artifacts_dir)
@@ -293,12 +294,12 @@ step_stats(bot, step_id, locator_used, fallback_used, duration_ms, run_id)
 
 ## 10. Vault, secrets and security model
 
-### Vault (`~/.local/share/open-rpa/vault.enc`)
+### Vault (`~/.local/share/rpawright/vault.enc`)
 - **File format:** JSON header (version, KDF parameters, salt, nonce) followed by one AES-256-GCM-encrypted JSON blob. Writes are atomic (temp file + rename). File mode `0600`.
 - **Key hierarchy:** a random 32-byte data key encrypts the vault. The data key is held in one of:
   1. the OS keyring (default);
   2. a passphrase-derived key (Argon2id, m=64 MiB, t=3, p=4);
-  3. the `OPEN_RPA_VAULT_KEY` environment variable or a `0600` key file, for headless or WSL daemons (risk documented).
+  3. the `RPAWRIGHT_VAULT_KEY` environment variable or a `0600` key file, for headless or WSL daemons (risk documented).
 - `vault rotate` re-wraps the data key.
 - Requires `cryptography>=44`, the first release with Argon2id.
 - **CLI:** `vault init | set <name> [--domains] | ls | rm | rotate | get <name> --reveal` (`--reveal` asks for confirmation and is never logged).
@@ -343,11 +344,11 @@ step_stats(bot, step_id, locator_used, fallback_used, duration_ms, run_id)
 | M4 | Recorder, toolbar, locator generation, `pick` | A recorded demo login replays cleanly |
 | M5 | Healer, 3 providers, verification, `heal review`, reorder suggestions | A broken demo page heals and the approved diff is applied |
 | M6 | SQLite store, `runs`, daemon, notifications, `daemon install` | A cron run works; timeout and overlap are handled; an ntfy alert arrives |
-| M7 | Docs, examples, release automation, v0.1.0 | `pipx install open-rpa` works on all 3 operating systems (release requires explicit user approval) |
+| M7 | Docs, examples, release automation, v0.1.0 | `pipx install rpawright` works on all 3 operating systems (release requires explicit user approval) |
 
 ## 13. v2 backlog
 SQLite work queue with a REFramework-style item loop; file-watch and queue triggers; OCR and document extraction; `llm_extract` step; `ask:` human-in-the-loop step; Windows desktop automation; local web designer driven by the JSON Schema; optional Rust daemon if a need appears.
 
-## 14. Open questions
-- Project and package name: "open-rpa" is a working name. Check PyPI availability before M7.
-- GitHub location: WickTech org or a personal account; public from day one or at M7.
+## 14. Resolved questions
+- **Name:** `rpawright` (chosen 2026-11-02). It was free on PyPI and no GitHub repo used it. `open-rpa` was rejected because it is easily confused with the existing OpenRPA project. Register the PyPI name early, at the first release or with a placeholder, so it stays available.
+- **GitHub:** public repo on the user's personal account `WickTech` (a GitHub user account, not an org), public from day one. Creating the repo and pushing requires explicit user confirmation.
