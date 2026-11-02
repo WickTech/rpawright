@@ -1,5 +1,5 @@
 # Demo bot: logs in to the bundled fixture site.
-# Serve it first: python -m http.server 8765 --directory tests/fixtures/site
+# Serve it first: uv run python -m http.server 8765 --directory tests/fixtures/site
 version: 1
 name: demo-login
 description: Log in to the fixture site; the email field has a fallback locator.

@@ -23,6 +23,9 @@ rpawright = "rpawright.cli:app"
 [dependency-groups]
 dev = ["pytest>=8", "pytest-cov", "mypy", "ruff"]
 
+[tool.hatch.build.targets.sdist]
+exclude = ["docs/superpowers", ".superpowers"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/rpawright"]
 

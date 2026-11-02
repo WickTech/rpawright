@@ -124,23 +124,26 @@ The demo bot logs in to the fixture site bundled in this repository, so serve th
 first (base URL `http://127.0.0.1:8765`). In one terminal:
 
 ```bash
-python -m http.server 8765 --directory tests/fixtures/site
+uv run python -m http.server 8765 --directory tests/fixtures/site
 ```
 
 In another terminal:
 
 ```bash
-uv run rpawright run examples/bots/demo-login.yaml --headed
+uv run rpawright run examples/bots/demo-login.yaml
 ```
 
+Add `--headed` to watch the browser window (needs a display).
+
 `run` prints one line per step, then `run ok` or `run failed` with the run directory. The
-email step lists `#email` first and a `textbox` named "Email" second; if the page's id
-changes (try `login_v2.html`), the second locator still finds the field.
+email step lists `#email` first and a `textbox` named "Email" second. To see the fallback,
+change the bot's `goto` URL to `http://127.0.0.1:8765/login_v2.html` (that page renames
+the field's id); the run still passes because the second locator finds the field.
 
 Artifacts are written to `runs/demo-login/<UTC timestamp>/` (change the root with
 `--runs-dir`):
 
-- `log.jsonl`: one record per step
+- `log.jsonl`: one JSON record per step, each with `"event": "step"` (a failed `--trace` save adds a `"event": "trace_failed"` record)
 - `fail-<step>.png`: screenshot of the page, only when a step fails
 - `trace.zip`: Playwright trace, only with `--trace`
 
