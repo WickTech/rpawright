@@ -24,3 +24,29 @@ def test_same_second_runs_get_distinct_dirs(
         "20261102T120000Z-2",
         "20261102T120000Z-3",
     ]
+
+
+@pytest.mark.parametrize("name", ["..", ".", "...", ".hidden", "x" * 300])
+def test_safe_name_is_a_single_safe_component(name: str) -> None:
+    s = artifacts.safe_name(name)
+    assert s not in ("", ".", "..")
+    assert not s.startswith(".")
+    assert len(s) <= 100
+    assert "/" not in s and "\\" not in s
+
+
+def test_safe_name_values() -> None:
+    assert artifacts.safe_name("..") == "bot"
+    assert artifacts.safe_name(".") == "bot"
+    assert artifacts.safe_name("...") == "bot"
+    assert artifacts.safe_name(".hidden") == "hidden"
+    assert len(artifacts.safe_name("x" * 300)) == 100
+
+
+@pytest.mark.parametrize("name", ["..", ".", "...", ".hidden", "x" * 300])
+def test_run_dir_stays_under_root_bot_dir(tmp_path: Path, name: str) -> None:
+    root = tmp_path / "runs"
+    run = RunArtifacts(root, name)
+    assert run.dir.parent == root / artifacts.safe_name(name)
+    assert run.dir.parent.parent == root
+    assert run.dir.resolve().is_relative_to(root.resolve())

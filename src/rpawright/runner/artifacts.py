@@ -10,7 +10,9 @@ from playwright.sync_api import Page
 
 def safe_name(s: str) -> str:
     """Make ``s`` safe as a path component."""
-    return re.sub(r"[^A-Za-z0-9._-]+", "-", s).strip("-") or "bot"
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", s).strip("-").lstrip(".")[:100]
+    cleaned = cleaned.strip("-")
+    return cleaned if cleaned.strip(".") else "bot"
 
 
 class RunArtifacts:
