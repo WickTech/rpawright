@@ -213,6 +213,8 @@ uv run mypy                       # type check (strict)
 uv run rpawright --version        # prints 0.1.0.dev0
 ```
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full set of checks and conventions.
+
 ## Design docs
 
 - Design spec: [docs/superpowers/specs/2026-11-02-open-rpa-design.md](docs/superpowers/specs/2026-11-02-open-rpa-design.md)
