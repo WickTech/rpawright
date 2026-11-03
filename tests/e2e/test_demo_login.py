@@ -50,3 +50,62 @@ def test_demo_login_survives_changed_id(tmp_path: Path, site_url: str) -> None:
     assert result.exit_code == 0, result.output
     fill = next(r for r in read_log(tmp_path) if r.get("step_id") == "fill-2")
     assert fill["locator_used"].startswith("role=textbox")
+
+
+def _bot(tmp_path: Path, text: str) -> Path:
+    bot = tmp_path / "bot.yaml"
+    bot.write_text(text, encoding="utf-8")
+    return bot
+
+
+_LOG_BOT = """version: 1
+name: t
+inputs:
+  n: {type: int, default: 1}
+  s: {type: string, default: z}
+steps:
+  - log: {message: "n={{ inputs.n }} s={{ inputs.s }}"}
+"""
+
+
+def test_run_missing_input_exits_2_without_traceback(tmp_path: Path) -> None:
+    bot = _bot(
+        tmp_path,
+        'version: 1\nname: t\ninputs:\n  month: {type: string}\nsteps:\n  - log: {message: "x"}\n',
+    )
+    result = CliRunner().invoke(app, ["run", str(bot), "--runs-dir", str(tmp_path / "runs")])
+    assert result.exit_code == 2
+    assert "missing required input 'month'" in result.output
+    assert "Traceback" not in result.output
+    assert not (tmp_path / "runs").exists()
+
+
+def test_run_input_flag_is_repeatable_and_typed(tmp_path: Path) -> None:
+    bot = _bot(tmp_path, _LOG_BOT)
+    result = CliRunner().invoke(
+        app,
+        ["run", str(bot), "--runs-dir", str(tmp_path / "runs"), "--input", "n=7", "-i", "s=x"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "log  n=7 s=x" in result.output
+
+
+def test_run_bad_int_input_exits_2(tmp_path: Path) -> None:
+    bot = _bot(tmp_path, _LOG_BOT)
+    result = CliRunner().invoke(
+        app, ["run", str(bot), "--runs-dir", str(tmp_path / "runs"), "--input", "n=seven"]
+    )
+    assert result.exit_code == 2
+    assert "error  " in result.output
+    assert "Traceback" not in result.output
+
+
+def test_run_vars_expression_error_exits_2(tmp_path: Path) -> None:
+    bot = _bot(
+        tmp_path,
+        'version: 1\nname: t\nvars:\n  x: "{{ nope }}"\nsteps:\n  - log: {message: "x"}\n',
+    )
+    result = CliRunner().invoke(app, ["run", str(bot), "--runs-dir", str(tmp_path / "runs")])
+    assert result.exit_code == 2
+    assert "vars.x: 'nope' is undefined" in result.output
+    assert not (tmp_path / "runs").exists()

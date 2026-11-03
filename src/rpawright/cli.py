@@ -8,6 +8,7 @@ import typer
 
 from rpawright import __version__
 from rpawright.runner.engine import run_workflow
+from rpawright.runner.inputs import InputError, parse_input_pairs
 from rpawright.workflow.loader import WorkflowError, load_workflow
 from rpawright.workflow.schema import workflow_json_schema
 
@@ -76,14 +77,30 @@ def run(
     runs_dir: Annotated[
         Path, typer.Option("--runs-dir", help="Where run artifacts are written.")
     ] = Path("runs"),
+    input_: Annotated[
+        list[str] | None,
+        typer.Option("--input", "-i", help="Bot input as name=value; repeatable."),
+    ] = None,
 ) -> None:
-    """Run a bot; exit 0 ok, 1 step failed, 2 invalid bot."""
+    """Run a bot; exit 0 ok, 1 step failed, 2 invalid bot or inputs."""
     try:
         wf = load_workflow(bot)
     except WorkflowError as e:
         typer.echo(f"error  {e}")
         raise typer.Exit(code=2) from e
-    result = run_workflow(wf, runs_root=runs_dir, headed=headed, step_mode=step, trace=trace)
+    try:
+        result = run_workflow(
+            wf,
+            runs_root=runs_dir,
+            headed=headed,
+            step_mode=step,
+            trace=trace,
+            inputs=parse_input_pairs(input_ or []),
+            echo=lambda message: typer.echo(f"log  {message}"),
+        )
+    except InputError as e:
+        typer.echo(f"error  {e}")
+        raise typer.Exit(code=2) from e
     for rec in result.steps:
         if rec.status == "ok":
             detail = (
@@ -91,10 +108,10 @@ def run(
                 if rec.locator_used
                 else (f"({rec.duration_ms} ms)")
             )
-            typer.echo(f"{'ok':<9} {rec.step_id:<10} {detail}")
+            typer.echo(f"{'ok':<9} {rec.path:<10} {detail}")
         else:
-            label = "FAILED" if rec.status == "failed" else "CONTINUED"
-            typer.echo(f"{label:<9} {rec.step_id:<10} {rec.error}")
+            label = {"failed": "FAILED", "handled": "HANDLED"}.get(rec.status, "CONTINUED")
+            typer.echo(f"{label:<9} {rec.path:<10} {rec.error}")
     typer.echo(f"run {result.status} — {result.run_dir}")
     if result.exit_code:
         raise typer.Exit(code=result.exit_code)

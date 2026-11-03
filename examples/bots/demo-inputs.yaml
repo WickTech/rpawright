@@ -1,0 +1,26 @@
+# Demo bot with inputs: logs in to the bundled fixture site, using steps that run today.
+# Serve it first: uv run python -m http.server 8765 --directory tests/fixtures/site
+# Override the default with: uv run rpawright run examples/bots/demo-inputs.yaml --input email=you@example.com
+version: 1
+name: demo-inputs
+description: Log in to the fixture site with an email taken from an input.
+inputs:
+  email: { type: string, default: me@example.com }
+vars:
+  greeting: "Signing in as {{ inputs.email }}"
+steps:
+  - log: { message: "{{ vars.greeting }}" }
+  - goto: http://127.0.0.1:8765/login.html
+  - fill:
+      target: [{ css: "#email" }, { role: textbox, name: Email }]
+      value: "{{ inputs.email }}"
+  - fill:
+      target: [{ label: Password }]
+      value: not-a-real-password
+  - click:
+      target: [{ role: button, name: Sign in }]
+  - assert:
+      target: [{ role: heading, name: Welcome }]
+      visible: true
+  - set: { done: "yes" }
+  - log: { message: "Login finished for {{ inputs.email }} (done={{ vars.done }})" }

@@ -5,7 +5,7 @@ Open-source, self-healing web RPA: record browser tasks to YAML, run them on a s
 [![CI](https://github.com/WickTech/rpawright/actions/workflows/ci.yml/badge.svg)](https://github.com/WickTech/rpawright/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-**Status: pre-alpha — M1 (foundation: validate + run) is complete and in review; recording, vault, healing and scheduling are not built yet.**
+**Status: pre-alpha, not usable for real work yet. M1 (foundation: `validate` + `run`) is merged. M2 (steps, expressions, control flow) is partly done: validated workflows, sandboxed `{{ }}` expressions, `inputs`/`vars`, per-step `retry`/`on_error`, and the `goto`, `click`, `fill`, `press`, `wait`, `assert`, `set`, `log` and `pause` steps run today. Page extraction, files, HTTP, `if`, `for_each` and `call` validate but do not run yet. Recording, vault, healing and scheduling are not built.**
 
 ## What it is
 
@@ -20,7 +20,11 @@ with UiPath.
 
 ## Example bot
 
-This is the planned workflow format (design spec section 6.1). It does not run yet.
+This is the planned workflow format (design spec section 6.1). It does not run yet: `extract_table`
+and `write_csv` have no runtime handler (running them fails with `step type '...' is not
+implemented yet`), and `{{ secret.* }}` is not available until M3. Of its steps, only `goto`, `fill`
+and `click` run today. A smaller bot that runs today is in
+[Example bot that runs today](#example-bot-that-runs-today).
 
 ```yaml
 version: 1
@@ -49,9 +53,33 @@ steps:
       rows: "{{ rows }}"
 ```
 
+## Example bot that runs today
+
+`examples/bots/demo-inputs.yaml` uses only steps that run now (`goto`, `fill`, `click`, `assert`,
+`set`, `log`), an `inputs:` section and a `vars:` section. It logs in to the bundled fixture site
+(see Quick start for serving it):
+
+```yaml
+version: 1
+name: demo-inputs
+inputs:
+  email: { type: string, default: me@example.com }
+vars:
+  greeting: "Signing in as {{ inputs.email }}"
+steps:
+  - log: { message: "{{ vars.greeting }}" }
+  - goto: http://127.0.0.1:8765/login.html
+  - fill:
+      target: [{ css: "#email" }, { role: textbox, name: Email }]
+      value: "{{ inputs.email }}"
+  # ... password, click, assert, set, log (see the file)
+```
+
+Override an input with `--input name=value` (repeatable, short form `-i`).
+
 ## Planned features
 
-Validated YAML workflows, `validate`, `schema`, locator fallback and `run` already work. Everything below beyond that is planned. Items marked (available) exist today.
+Items marked (available) work at runtime today; everything else is planned.
 
 **Authoring**
 - Recorder that turns browser actions into YAML steps, with several ranked locators per target
@@ -59,10 +87,13 @@ Validated YAML workflows, `validate`, `schema`, locator fallback and `run` alrea
 - Typed, validated workflow format with a generated JSON Schema for editor autocomplete (available)
 
 **Running**
-- Steps for navigation, forms, extraction, downloads, uploads, HTTP, and CSV/XLSX files
-- Variables, sandboxed `{{ }}` expressions, `if`, `for_each`, and `call`
-- Per-step `retry` and `on_error`
-- Debugging with `--headed`, `--step`, `pause:`, and Playwright traces (`--headed`, `--step` and traces are available; `pause:` is not)
+- Steps for navigation and forms: `goto`, `click`, `fill`, `press`, `wait`, `assert` (available)
+- `set`, `log` and `pause` steps (available)
+- `inputs:` and `vars:` sections, and `rpawright run --input k=v` (available)
+- Sandboxed `{{ }}` expressions over inputs, vars, loop variables, `today` and `env`, using filters only (no function or method calls) (available)
+- Per-step `retry` and `on_error` (`fail`, `continue`, or a list of steps) (available)
+- Debugging with `--headed`, `--step`, `pause:` and Playwright traces (available)
+- Steps for extraction, downloads, uploads, HTTP, and CSV/XLSX files, plus `if`, `for_each` and `call` (see the list below)
 - Run artifacts: redacted JSONL log, failure screenshot, optional trace (available; redaction is not built yet)
 
 **Self-healing**
@@ -79,6 +110,18 @@ Validated YAML workflows, `validate`, `schema`, locator fallback and `run` alrea
 - Local daemon with cron and interval triggers, timeouts, and overlap control
 - SQLite run history and `rpawright runs`
 - Webhook or command notifications; autostart via systemd, launchd, or Task Scheduler
+
+**Accepted by `validate` but not runnable yet.** These step types pass `validate` and the JSON
+Schema, but have no runtime handler. Running a bot that reaches one fails that step with
+`step type '<name>' is not implemented yet` (exit code 1; `on_error` applies, `retry` does not):
+`select`, `hover`, `extract_text`, `extract_table`, `download`, `upload`, `screenshot`, `http`,
+`read_csv`, `write_csv`, `read_xlsx`, `write_xlsx`, `if`, `for_each`, `call`.
+
+## Expressions
+
+Only `{{ ... }}` is supported. There are no `{% %}` or `{# #}` blocks; to write a literal `{%` or
+`{#` in text, use `{{ '{%' }}` or `{{ '{#' }}`. Transformations use filters (`{{ x | upper }}`),
+not method calls or function calls. `secret` and `asset` namespaces do not exist until M3.
 
 ## How it compares
 
@@ -98,8 +141,8 @@ shipped behavior.
 
 | Milestone | Scope | Status |
 |---|---|---|
-| M1 | Workflow models, `validate`, core runner, locator fallback, artifacts | complete (in review) |
-| M2 | All v1 steps, control flow, expressions, CSV/XLSX/HTTP, retry/on_error | planned |
+| M1 | Workflow models, `validate`, core runner, locator fallback, artifacts | complete (merged) |
+| M2 | All v1 steps, control flow, expressions, CSV/XLSX/HTTP, retry/on_error | in progress — expressions, models, executor, inputs, set/log/pause done; page/flow/file/http steps and the invoice example next |
 | M3 | Vault, policy guard, domain binding, redaction, masked screenshots | planned |
 | M4 | Recorder, toolbar, locator generation, `pick` | planned |
 | M5 | Healer, three providers, verification, `heal review` | planned |
@@ -131,6 +174,14 @@ In another terminal:
 
 ```bash
 uv run rpawright run examples/bots/demo-login.yaml
+```
+
+To run the bot with an input and the `inputs:` section (same server):
+
+```bash
+uv run rpawright validate examples/bots/demo-inputs.yaml
+uv run rpawright run examples/bots/demo-inputs.yaml
+uv run rpawright run examples/bots/demo-inputs.yaml --input email=you@example.com
 ```
 
 Add `--headed` to watch the browser window (needs a display).

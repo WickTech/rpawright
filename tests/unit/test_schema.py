@@ -33,3 +33,21 @@ def test_schema_command_writes_file_with_out_option(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert result.stdout == ""
     assert out.read_text() == json.dumps(workflow_json_schema(), indent=2, sort_keys=True) + "\n"
+
+
+def test_schema_has_new_steps_and_yaml_names() -> None:
+    text = json.dumps(workflow_json_schema())
+    for key in (
+        '"for_each"',
+        '"extract_table"',
+        '"expect_status"',
+        '"then"',
+        '"else"',
+        '"if"',
+        '"in"',
+        '"as"',
+        '"json"',
+    ):
+        assert key in text
+    for key in ('"if_"', '"else_"', '"in_"', '"as_"', '"json_"'):
+        assert key not in text

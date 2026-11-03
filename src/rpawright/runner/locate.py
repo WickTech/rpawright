@@ -1,6 +1,8 @@
 """Locator resolution: first candidate matching exactly one visible element wins."""
 
+import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from playwright.sync_api import Error as PlaywrightError
@@ -56,6 +58,30 @@ def build_locator(scope: Page | FrameLocator, t: Target) -> Locator:
     return loc
 
 
+def poll_until[T](
+    page: Page,
+    check: Callable[[], T | None],
+    *,
+    timeout_ms: int,
+    poll_ms: int = 250,
+) -> T | None:
+    """Call ``check`` until it returns non-None or ``timeout_ms`` passes (then None).
+
+    ``check`` always runs at least once. Waits go through ``page.wait_for_timeout`` (never
+    ``time.sleep``) so Playwright events such as downloads keep firing, and each wait is
+    clamped to the time left so the deadline is not overshot.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        result = check()
+        if result is not None:
+            return result
+        remaining_ms = (deadline - time.monotonic()) * 1000
+        if remaining_ms <= 0:
+            return None
+        page.wait_for_timeout(min(poll_ms, remaining_ms))
+
+
 def _poll(
     page: Page,
     scope: Page | FrameLocator,
@@ -67,8 +93,9 @@ def _poll(
     what: str,
 ) -> Resolved:
     tried: list[tuple[str, int]] = []
-    while True:
-        tried = []
+
+    def check() -> Resolved | None:
+        tried.clear()
         for i, t in enumerate(targets):
             count = 0
             try:
@@ -82,12 +109,16 @@ def _poll(
             tried.append((describe(t), count))
             if visible:
                 return Resolved(locator=loc, index=i)
-        if time.monotonic() >= deadline:
-            detail = ", ".join(f"{d} ({c} match{'' if c == 1 else 'es'})" for d, c in tried)
-            raise LocatorNotFound(
-                step_id, f"no {what} matched exactly one visible element: {detail}", tried
-            )
-        page.wait_for_timeout(poll_ms)
+        return None
+
+    timeout_ms = max(0, math.ceil((deadline - time.monotonic()) * 1000))
+    hit = poll_until(page, check, timeout_ms=timeout_ms, poll_ms=poll_ms)
+    if hit is not None:
+        return hit
+    detail = ", ".join(f"{d} ({c} match{'' if c == 1 else 'es'})" for d, c in tried)
+    raise LocatorNotFound(
+        step_id, f"no {what} matched exactly one visible element: {detail}", tried
+    )
 
 
 def frame_scope(

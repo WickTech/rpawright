@@ -1,13 +1,13 @@
 """Load and validate workflow YAML files."""
 
 from pathlib import Path
-from typing import Any
 
 from pydantic import ValidationError
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
 from rpawright.workflow.models import Workflow
+from rpawright.workflow.templating import expression_errors
 
 
 class WorkflowError(Exception):
@@ -29,16 +29,6 @@ def _format_loc(loc: tuple[int | str, ...]) -> str:
     return out
 
 
-_STEP_MODELS = {
-    "goto": "GotoStep",
-    "click": "ClickStep",
-    "fill": "FillStep",
-    "press": "PressStep",
-    "wait": "WaitStep",
-    "assert": "AssertStep",
-}
-
-
 _COMMON_FIELDS = ("id", "retry", "on_error", "timeout_ms")
 
 
@@ -51,31 +41,56 @@ def _join(loc: tuple[int | str, ...], msg: str) -> str:
     return f"{where}: {_clean_msg(msg)}" if where else _clean_msg(msg)
 
 
-def _first_error(exc: ValidationError, data: dict[str, Any]) -> str:
-    """Format the most relevant error.
+# Deeply nested workflows may be rejected with "nesting too deep"; the exact limit depends on
+# the platform (tested to 40 levels on all platforms).
+_TOO_DEEP = "nesting too deep"
+_STEP_LISTS = ("steps", "then", "else", "on_error")
 
-    A step is a union of per-action models, so pydantic reports an error for every
-    model. Prefer the errors of the model matching the step's single action key.
-    """
+
+def _clean_loc(loc: tuple[int | str, ...]) -> tuple[int | str, ...]:
+    """Drop pydantic's union bookkeeping: branch labels and the step-tag segment."""
+    parts = [p for p in loc if not (isinstance(p, str) and p.startswith(("literal[", "list[")))]
+    out: list[int | str] = []
+    for i, part in enumerate(parts):
+        is_tag = (
+            isinstance(part, str)
+            and i >= 2
+            and isinstance(parts[i - 1], int)
+            and parts[i - 2] in _STEP_LISTS
+        )
+        # An `if` step's own key is not repeated in the loc: its tag stands for `if`.
+        if is_tag and part == "if" and parts[i + 1 : i + 2] in (["then"], ["else"]):
+            is_tag = False
+        if not is_tag:
+            out.append(part)
+    return tuple(out)
+
+
+def _in_list_branch(loc: tuple[int | str, ...], prefix: tuple[int | str, ...]) -> bool:
+    return (
+        loc[: len(prefix)] == prefix
+        and len(loc) > len(prefix)
+        and str(loc[len(prefix)]).startswith("list[")
+    )
+
+
+def _first_error(exc: ValidationError) -> str:
+    """Format the first error; steps are tagged unions, so errors only name the chosen model."""
     errors = exc.errors()
-    first = errors[0]["loc"]
-    steps = data.get("steps")
-    if first[:1] == ("steps",) and len(first) > 2 and isinstance(steps, list):
-        index = first[1]
-        step = steps[index] if isinstance(index, int) and index < len(steps) else None
-        actions = [k for k in step if k in _STEP_MODELS] if isinstance(step, dict) else []
-        if isinstance(step, dict) and len(actions) != 1:
-            found = [k for k in step if k not in _COMMON_FIELDS]
-            return (
-                f"steps[{index}]: a step needs exactly one action key "
-                f"({', '.join(_STEP_MODELS)}); got {found}"
-            )
-        if len(actions) == 1:
-            for err in errors:
-                loc = err["loc"]
-                if loc[:2] == ("steps", index) and loc[2:3] == (_STEP_MODELS[actions[0]],):
-                    return _join((*loc[:2], *loc[3:]), err["msg"])
-    return _join(first, errors[0]["msg"])
+    if any(e["type"] == "recursion_loop" or "Recursion error" in e["msg"] for e in errors):
+        return _TOO_DEEP
+    err = errors[0]
+    last = err["loc"][-1:]
+    if last and str(last[0]).startswith("literal[") and isinstance(err["input"], list):
+        # `on_error` is "fail" | "continue" | a step list; a list was meant, so show its errors.
+        prefix = err["loc"][:-1]
+        err = next((e for e in errors if _in_list_branch(e["loc"], prefix)), err)
+    where = _clean_loc(err["loc"])
+    if err["type"] == "union_tag_not_found":
+        value = err.get("input")
+        found = [k for k in value if k not in _COMMON_FIELDS] if isinstance(value, dict) else []
+        return _join(where, f"a step needs exactly one action key; got {found}")
+    return _join(where, err["msg"])
 
 
 def load_workflow(path: Path) -> Workflow:
@@ -88,6 +103,8 @@ def load_workflow(path: Path) -> Workflow:
         raise WorkflowError(path, "file is not valid UTF-8 text") from e
     try:
         data = YAML(typ="safe").load(text)
+    except RecursionError as e:
+        raise WorkflowError(path, _TOO_DEEP) from e
     except YAMLError as e:
         mark = getattr(e, "problem_mark", None)
         where = f"line {mark.line + 1}: " if mark is not None else ""
@@ -96,6 +113,15 @@ def load_workflow(path: Path) -> Workflow:
     if not isinstance(data, dict):
         raise WorkflowError(path, "top level must be a mapping")
     try:
-        return Workflow.model_validate(data)
+        wf = Workflow.model_validate(data)
     except ValidationError as e:
-        raise WorkflowError(path, _first_error(e, data)) from e
+        raise WorkflowError(path, _first_error(e)) from e
+    except RecursionError as e:
+        raise WorkflowError(path, _TOO_DEEP) from e
+    try:
+        problems = expression_errors(wf)
+    except RecursionError as e:
+        raise WorkflowError(path, _TOO_DEEP) from e
+    if problems:
+        raise WorkflowError(path, problems[0])
+    return wf

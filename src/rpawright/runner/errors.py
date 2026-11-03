@@ -20,3 +20,30 @@ class LocatorNotFound(StepError):
 
 class AssertionFailed(StepError):
     """An assert step did not hold."""
+
+
+class PolicyViolation(StepError):
+    """A bot broke a safety policy; never retried, handled or continued by any ``on_error``."""
+
+
+class ExpressionFailure(StepError):
+    """A ``{{ }}`` expression in the step failed to render; never retried."""
+
+
+class NotImplementedStep(StepError):
+    """The step type is accepted by the models but has no runtime handler yet; never retried."""
+
+    def __init__(self, step_id: str, action: str) -> None:
+        super().__init__(step_id, f"step type '{action}' is not implemented yet")
+
+
+class NestedFailure(StepError):
+    """A step inside a nested block failed; ``policy`` is set when it was a policy failure."""
+
+    def __init__(
+        self, step_id: str, message: str, *, policy: bool = False, cause_path: str | None = None
+    ) -> None:
+        super().__init__(step_id, message)
+        self.policy = policy
+        # Path of the innermost failed record that caused this failure.
+        self.cause_path = cause_path
