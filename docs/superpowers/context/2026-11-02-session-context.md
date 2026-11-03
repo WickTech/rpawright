@@ -43,17 +43,18 @@ design conversation stopped. The authoritative design is
 - `Promt.md`: a prompt for auditing a **different repo (Task-Master)**. Not related to rpawright and
   not acted on. Its Robocorp video link was noted as background.
 
-## State at end of session
-- Repo: `~/workspace/open-rpa`, branch `main`, **no remote**. Commits: `dbc14e5` (spec + context), `bb1f6b7` (rename to rpawright).
-- **No code written.**
+## State (updated 2026-11-02, after M1 execution)
+- Spec approved. Public repo https://github.com/WickTech/rpawright.
+- **M1 is complete** on branch `m1-foundation` (all 6 plan tasks plus README, per-task reviews, a whole-branch review and one fix wave).
+  Result: 85 tests, 98% coverage, ruff and mypy strict clean.
+- M1 delivers: typed YAML workflow models, loader with line and step errors, `rpawright validate`, JSON Schema export with a CI drift check,
+  locator fallback (ordered candidates, ambiguity-safe, iframe support), run engine (retry, `on_error`, JSONL log, failure screenshot, optional trace),
+  `rpawright run`, a demo bot with end-to-end tests, and a README with a quick start.
+- The operating manual for the remaining work is `docs/superpowers/plans/2026-11-02-autonomous-runbook.md`
+  (authority, stop points, model routing, M2-M7 steps, recovery). Section 0 there is a snapshot from before M1 finished; for current state trust `git log`,
+  `gh pr list`, and this note.
 
-## Pending (ask the user; nothing done yet)
-1. **Spec approval.** The user has not yet explicitly approved the written spec. Ask for approval or changes.
-2. **Create the public repo and push.** This needs an explicit yes, because it is a public action.
-   Planned commands: `gh repo create WickTech/rpawright --public --source . --push`, pushing `main`
-   with the docs commits only; leave `Promt.md` and `core-features of UI-path.md` untracked.
-
-## Next steps after approval
-1. Invoke `superpowers:writing-plans`. Write the implementation plan for M1–M7 to `docs/superpowers/plans/`.
-2. The user picks the execution method (subagent-driven, inline, or the `/ship` pipeline).
-3. One PR per milestone; the user merges with a merge commit or rebase, never squash.
+## Next steps
+1. The user reviews and merges the M1 PR (merge commit or rebase, never squash).
+2. Continue with M2 per the runbook, section 5 (stacked branches).
+3. M3 must route redaction through `RunArtifacts.log` and `.screenshot`, disable traces for bots that use secrets, and mask failure screenshots (see the final M1 review).

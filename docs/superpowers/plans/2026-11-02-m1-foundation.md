@@ -43,7 +43,7 @@
 pyproject.toml                      package metadata, deps, tool config (ruff, mypy, pytest, coverage)
 LICENSE                             Apache-2.0 text
 README.md                           what it is, install, quick start for M1
-.gitignore                          .venv, runs/, __pycache__, .coverage, dist/, Promt.md, core-features of UI-path.md
+.gitignore                          .venv, runs/, __pycache__, .coverage, dist/
 .github/workflows/ci.yml            lint-type + test matrix
 src/rpawright/__init__.py           __version__ = "0.1.0.dev0"
 src/rpawright/cli.py                Typer app: validate, schema, run, --version

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Login</title></head>
+<body>
+  <h1>Sign in</h1>
+  <input id="email" aria-label="Email">
+  <label for="password">Password</label>
+  <input id="password" type="password">
+  <button id="signin">Sign in</button>
+  <script>
+    document.getElementById("signin").addEventListener("click", function () {
+      var email = document.getElementById("email").value;
+      var password = document.getElementById("password").value;
+      if (email !== "" && password !== "") {
+        window.location.href = "dashboard.html";
+      }
+    });
+  </script>
+</body>
+</html>

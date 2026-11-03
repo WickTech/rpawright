@@ -1,0 +1,100 @@
+"""Command line entry point for rpawright."""
+
+import json
+from pathlib import Path
+from typing import Annotated
+
+import typer
+
+from rpawright import __version__
+from rpawright.runner.engine import run_workflow
+from rpawright.workflow.loader import WorkflowError, load_workflow
+from rpawright.workflow.schema import workflow_json_schema
+
+app = typer.Typer(help="rpawright: self-healing web RPA driven by YAML bots.", no_args_is_help=True)
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(__version__)
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the version and exit.",
+    ),
+) -> None:
+    """rpawright command group."""
+
+
+@app.command()
+def validate(
+    paths: Annotated[list[Path], typer.Argument(help="Workflow YAML files to validate.")],
+) -> None:
+    """Validate workflow files; exit 2 if any is invalid."""
+    failed = False
+    for path in paths:
+        try:
+            load_workflow(path)
+        except WorkflowError as e:
+            failed = True
+            typer.echo(f"error  {e}")
+        else:
+            typer.echo(f"ok  {path}")
+    if failed:
+        raise typer.Exit(code=2)
+
+
+@app.command()
+def schema(
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="Write the schema to this file instead of stdout."),
+    ] = None,
+) -> None:
+    """Print the workflow JSON Schema, or write it to --out."""
+    text = json.dumps(workflow_json_schema(), indent=2, sort_keys=True) + "\n"
+    if out is None:
+        typer.echo(text, nl=False)
+    else:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(text.encode("utf-8"))
+
+
+@app.command()
+def run(
+    bot: Annotated[Path, typer.Argument(help="Workflow YAML file to run.")],
+    headed: Annotated[bool, typer.Option("--headed", help="Show the browser window.")] = False,
+    step: Annotated[bool, typer.Option("--step", help="Pause before each step.")] = False,
+    trace: Annotated[bool, typer.Option("--trace", help="Save a Playwright trace.zip.")] = False,
+    runs_dir: Annotated[
+        Path, typer.Option("--runs-dir", help="Where run artifacts are written.")
+    ] = Path("runs"),
+) -> None:
+    """Run a bot; exit 0 ok, 1 step failed, 2 invalid bot."""
+    try:
+        wf = load_workflow(bot)
+    except WorkflowError as e:
+        typer.echo(f"error  {e}")
+        raise typer.Exit(code=2) from e
+    result = run_workflow(wf, runs_root=runs_dir, headed=headed, step_mode=step, trace=trace)
+    for rec in result.steps:
+        if rec.status == "ok":
+            detail = (
+                f"({rec.locator_used}, {rec.duration_ms} ms)"
+                if rec.locator_used
+                else (f"({rec.duration_ms} ms)")
+            )
+            typer.echo(f"{'ok':<9} {rec.step_id:<10} {detail}")
+        else:
+            label = "FAILED" if rec.status == "failed" else "CONTINUED"
+            typer.echo(f"{label:<9} {rec.step_id:<10} {rec.error}")
+    typer.echo(f"run {result.status} — {result.run_dir}")
+    if result.exit_code:
+        raise typer.Exit(code=result.exit_code)
