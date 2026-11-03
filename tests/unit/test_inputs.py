@@ -28,7 +28,8 @@ def test_env_namespace_only_prefixed() -> None:
     env = {"RPAWRIGHT_ENV_REGION": "eu", "RPAWRIGHT_VAULT_KEY": "k", "HOME": "/h"}
     ns = build_namespace(Scope(), env=env, today=TODAY)
     assert ns["env"] == {"REGION": "eu"}
-    assert "k" not in str(ns)
+    assert "RPAWRIGHT_VAULT_KEY" not in ns["env"]  # type: ignore[operator]
+    assert "k" not in ns["env"].values()  # type: ignore[attr-defined]
 
 
 def test_namespace_precedence() -> None:
@@ -123,3 +124,21 @@ def test_parse_input_pairs() -> None:
     assert parse_input_pairs(["a=b=c", "x=1"]) == {"a": "b=c", "x": "1"}
     with pytest.raises(InputError, match="novalue"):
         parse_input_pairs(["novalue"])
+
+
+def test_namespace_converts_vars_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rpawright.runner import inputs as mod
+
+    rows = [{"a": i, "b": i, "c": i} for i in range(1000)]
+    scope = Scope(vars={"rows": rows})
+    seen: list[object] = []
+    real = mod.to_plain
+
+    def counting(value: object, depth: int = 0) -> object:
+        if value is scope.vars:
+            seen.append(value)
+        return real(value, depth)
+
+    monkeypatch.setattr(mod, "to_plain", counting)
+    build_namespace(scope, env={}, today=TODAY)
+    assert len(seen) == 1

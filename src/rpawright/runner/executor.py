@@ -12,7 +12,7 @@ from rpawright.runner.handlers import HANDLERS
 from rpawright.runner.inputs import build_namespace
 from rpawright.workflow.expressions import ExpressionError
 from rpawright.workflow.models import Step, StepCommon, action_name
-from rpawright.workflow.templating import render_step
+from rpawright.workflow.templating import has_templates, render_step
 
 __all__ = ["NestedFailure", "run_attempts", "run_step", "run_steps"]
 
@@ -124,6 +124,9 @@ def _recover(
 
 def _render_and_run(run: RunContext, ctx: StepContext, step: Step, action: str) -> None:
     """Render the step's ``{{ }}`` fields against the current scope, then run its handler."""
+    if not has_templates(step):  # nothing to render: skip building the namespace
+        HANDLERS[action](ctx, step)
+        return
     try:
         rendered = render_step(step, build_namespace(run.scope, env=run.env, today=run.today))
     except ExpressionError as e:

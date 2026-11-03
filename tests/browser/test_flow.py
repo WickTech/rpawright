@@ -420,3 +420,30 @@ def test_input_error_raised_before_run_dir(run_bot: RunBot, tmp_path: Path) -> N
     with pytest.raises(InputError, match="missing required input 'm'"):
         run_bot({"inputs": {"m": {"type": "string"}}, "steps": [{"log": {"message": "x"}}]})
     assert not (tmp_path / "runs").exists()
+
+
+def test_literal_step_does_not_build_namespace(
+    run_bot: RunBot, site_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rpawright.runner import executor
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError("namespace built for a literal step")
+
+    monkeypatch.setattr(executor, "build_namespace", boom)
+    res = run_bot({"steps": [_login(site_url), {"wait": {"ms": 1}}]})
+    assert res.exit_code == 0, res.steps
+
+
+def test_templated_step_sees_vars_after_set(run_bot: RunBot) -> None:
+    res = run_bot(
+        {
+            "steps": [
+                {"set": {"x": 1}},
+                {"log": {"message": "a{{ x }}"}},
+                {"set": {"x": 2}},
+                {"log": {"message": "b{{ x }}"}},
+            ]
+        }
+    )
+    assert _messages(res) == ["a1", "b2"]

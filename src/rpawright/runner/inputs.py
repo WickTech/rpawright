@@ -65,10 +65,11 @@ def to_plain(value: object, depth: int = 0) -> Any:
 def build_namespace(scope: Scope, *, env: Mapping[str, str], today: date) -> dict[str, object]:
     """Names visible to expressions; later entries win (R2): vars, loop, then reserved names."""
     ns: dict[str, object] = {}
-    ns.update(to_plain(scope.vars))
+    plain_vars = to_plain(scope.vars)  # converted once, shared by bare names and ``vars``
+    ns.update(plain_vars)
     ns.update(to_plain(scope.loop))
     ns["inputs"] = to_plain(scope.inputs)
-    ns["vars"] = to_plain(scope.vars)
+    ns["vars"] = plain_vars
     ns["secret"] = SECRET
     ns["asset"] = ASSET
     ns["env"] = env_namespace(env)

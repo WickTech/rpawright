@@ -74,6 +74,11 @@ def _render_model(model: BaseModel, ns: Mapping[str, object], path: str, inherit
     return model.model_copy(update=update)
 
 
+def has_templates(step: StepCommon) -> bool:
+    """True when any renderable string of ``step`` holds a template marker."""
+    return any(marker in text for _, text in iter_strings(step, "") for marker in _MARKERS)
+
+
 def render_step[S: StepCommon](step: S, namespace: Mapping[str, object]) -> S:
     """Return a copy of ``step`` with every string field rendered (lazy fields untouched)."""
     return _render_model(step, namespace, "", False)  # type: ignore[no-any-return]
