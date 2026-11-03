@@ -9,6 +9,7 @@ from rpawright.workflow.expressions import ExpressionError, check_syntax, evalua
 from rpawright.workflow.models import StepCommon, Workflow, child_blocks
 
 MAX_EXPRESSION_CHARS = 10_000
+_MARKERS = ("{{", "{%", "{#")
 _SKIPPED = frozenset({"id"})
 
 
@@ -79,7 +80,7 @@ def render_step[S: StepCommon](step: S, namespace: Mapping[str, object]) -> S:
 
 
 def _check(path: str, text: str, problems: list[str], prefix: str) -> None:
-    if "{{" not in text:
+    if not any(marker in text for marker in _MARKERS):
         return
     if len(text) > MAX_EXPRESSION_CHARS:
         problems.append(

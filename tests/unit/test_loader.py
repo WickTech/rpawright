@@ -158,3 +158,51 @@ def test_overlong_expression_rejected(tmp_path: Path) -> None:
     assert len(long) > 10_000
     msg = _msg(tmp_path, f"  - goto: http://x\n  - goto: '{long}'\n")
     assert msg == "steps[1].goto: expression too long (max 10000 characters)"
+
+
+@pytest.mark.parametrize("text", ["{% if x %}a{% endif %}", "{# c #}"])
+def test_statement_and_comment_blocks_rejected(tmp_path: Path, text: str) -> None:
+    msg = _msg(tmp_path, f"  - goto: '{text}'\n")
+    assert msg.startswith("steps[0].goto: bad expression: only {{ }} expressions are allowed")
+    msg = _msg(
+        tmp_path,
+        f"  - goto: http://x\n  - if: true\n    then:\n      - goto: '{text}'\n",
+    )
+    assert msg.startswith("steps[1].if.then[0].goto: bad expression: only {{ }}")
+
+
+def test_long_statement_string_hits_length_cap_but_plain_long_is_fine(tmp_path: Path) -> None:
+    msg = _msg(tmp_path, f"  - goto: '{{% if x %}}{'a' * 10_000}'\n")
+    assert msg == "steps[0].goto: expression too long (max 10000 characters)"
+    p = tmp_path / "ok.yaml"
+    p.write_text(f"version: 1\nname: x\nsteps:\n  - goto: '{'a' * 20_000}'\n")
+    load_workflow(p)
+
+
+def _nested_if(depth: int) -> str:
+    lines = ["version: 1", "name: x", "steps:"]
+    for i in range(depth):
+        pad = "  " * (2 * i + 1)
+        lines += [f"{pad}- if: true", f"{pad}  then:"]
+    lines.append("  " * (2 * depth + 1) + "- goto: http://x")
+    return "\n".join(lines) + "\n"
+
+
+def test_deep_nesting_is_clean_error(tmp_path: Path) -> None:
+    flow = tmp_path / "flow.yaml"
+    flow.write_text("version: 1\nname: x\nsteps: " + "[" * 3000 + "]" * 3000 + "\n")
+    deep = tmp_path / "deep.yaml"
+    deep.write_text(_nested_if(400))
+    for p in (flow, deep):
+        with pytest.raises(WorkflowError) as e:
+            load_workflow(p)
+        assert e.value.message == "nesting too deep"
+    r = CliRunner().invoke(app, ["validate", str(flow), str(deep)])
+    assert r.exit_code == 2 and "Traceback" not in r.stdout
+    assert "nesting too deep" in r.stdout
+
+
+def test_moderate_nesting_still_loads(tmp_path: Path) -> None:
+    p = tmp_path / "ok.yaml"
+    p.write_text(_nested_if(200))
+    load_workflow(p)

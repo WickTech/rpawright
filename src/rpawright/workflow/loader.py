@@ -41,6 +41,7 @@ def _join(loc: tuple[int | str, ...], msg: str) -> str:
     return f"{where}: {_clean_msg(msg)}" if where else _clean_msg(msg)
 
 
+_TOO_DEEP = "nesting too deep"
 _STEP_LISTS = ("steps", "then", "else", "on_error")
 
 
@@ -98,6 +99,8 @@ def load_workflow(path: Path) -> Workflow:
         raise WorkflowError(path, "file is not valid UTF-8 text") from e
     try:
         data = YAML(typ="safe").load(text)
+    except RecursionError as e:
+        raise WorkflowError(path, _TOO_DEEP) from e
     except YAMLError as e:
         mark = getattr(e, "problem_mark", None)
         where = f"line {mark.line + 1}: " if mark is not None else ""
@@ -109,7 +112,12 @@ def load_workflow(path: Path) -> Workflow:
         wf = Workflow.model_validate(data)
     except ValidationError as e:
         raise WorkflowError(path, _first_error(e)) from e
-    problems = expression_errors(wf)
+    except RecursionError as e:
+        raise WorkflowError(path, _TOO_DEEP) from e
+    try:
+        problems = expression_errors(wf)
+    except RecursionError as e:
+        raise WorkflowError(path, _TOO_DEEP) from e
     if problems:
         raise WorkflowError(path, problems[0])
     return wf
