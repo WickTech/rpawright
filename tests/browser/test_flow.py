@@ -3,6 +3,7 @@ without ``browser=`` or invoke the CLI ``run`` here, since sync Playwright canno
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -314,3 +315,108 @@ def test_cause_path_survives_two_nesting_levels(
     assert res.failed_step == "leaf" and res.failed_path == "outer/mid/leaf"
     log = _log(res)
     assert all("cause_path" not in rec for rec in log)
+
+
+def _messages(result: RunResult) -> list[object]:
+    return [e["message"] for e in _log(result) if e.get("event") == "log"]
+
+
+def test_set_keeps_native_and_text(run_bot: RunBot) -> None:
+    echoed: list[str] = []
+    res = run_bot(
+        {
+            "inputs": {"k": {"type": "int", "default": 5}},
+            "steps": [
+                {"set": {"n": "{{ inputs.k }}", "rows": [{"a": 1}]}},
+                {"log": {"message": "n={{ n }} a={{ rows[0].a }}"}},
+            ],
+        },
+        echo=echoed.append,
+    )
+    assert res.exit_code == 0
+    assert _messages(res) == ["n=5 a=1"]
+    assert echoed == ["n=5 a=1"]
+
+
+def test_expression_error_names_step_expression_and_field(run_bot: RunBot) -> None:
+    res = run_bot(
+        {
+            "steps": [
+                {"id": "f1", "retry": {"times": 3, "delay_ms": 0}, "log": {"message": "{{ nope }}"}}
+            ]
+        }
+    )
+    assert res.exit_code == 1
+    rec = res.steps[0]
+    assert rec.error == "log.message: 'nope' is undefined in {{ nope }}"
+    assert rec.attempts == 1
+
+
+def test_secret_expression_fails_step_with_m3_message(run_bot: RunBot) -> None:
+    res = run_bot({"steps": [{"log": {"message": "{{ secret.pw }}"}}]})
+    assert res.exit_code == 1
+    assert "secrets arrive with the vault in M3" in (res.steps[0].error or "")
+
+
+def test_rendered_values_are_not_rerendered(run_bot: RunBot) -> None:
+    res = run_bot(
+        {
+            "steps": [
+                {"set": {"v": "{{ '{{ 7*7 }}' }}"}},
+                {"log": {"message": "{{ v }}"}},
+            ]
+        }
+    )
+    assert res.exit_code == 0
+    assert _messages(res) == ["{{ 7*7 }}"]
+
+
+def test_provided_input_is_not_rendered(run_bot: RunBot) -> None:
+    res = run_bot(
+        {
+            "inputs": {"s": {"type": "string"}},
+            "steps": [{"log": {"message": "{{ inputs.s }}"}}],
+        },
+        inputs={"s": "{{ 7*7 }}"},
+    )
+    assert _messages(res) == ["{{ 7*7 }}"]
+
+
+def test_log_step_writes_event_and_echoes(run_bot: RunBot) -> None:
+    echoed: list[str] = []
+    res = run_bot(
+        {
+            "inputs": {"k": {"type": "int", "default": 5}},
+            "steps": [{"id": "l1", "log": {"message": "hello {{ inputs.k }}"}}],
+        },
+        echo=echoed.append,
+    )
+    assert echoed == ["hello 5"]
+    entry = next(e for e in _log(res) if e.get("event") == "log")
+    assert entry == {"event": "log", "step_id": "l1", "path": "l1", "message": "hello 5"}
+
+
+def test_pause_headless_skipped(run_bot: RunBot) -> None:
+    res = run_bot({"steps": [{"pause": "look"}]})
+    assert res.steps[0].status == "ok"
+    assert _messages(res) == ["pause skipped (headless)"]
+
+
+def test_vars_section_and_inputs_in_templates(run_bot: RunBot) -> None:
+    res = run_bot(
+        {
+            "inputs": {"who": {"type": "string"}},
+            "vars": {"greeting": "hi {{ inputs.who }}", "n": 2},
+            "steps": [{"log": {"message": "{{ greeting }}/{{ vars.n * 3 }}"}}],
+        },
+        inputs={"who": "bob"},
+    )
+    assert _messages(res) == ["hi bob/6"]
+
+
+def test_input_error_raised_before_run_dir(run_bot: RunBot, tmp_path: Path) -> None:
+    from rpawright.runner.inputs import InputError
+
+    with pytest.raises(InputError, match="missing required input 'm'"):
+        run_bot({"inputs": {"m": {"type": "string"}}, "steps": [{"log": {"message": "x"}}]})
+    assert not (tmp_path / "runs").exists()

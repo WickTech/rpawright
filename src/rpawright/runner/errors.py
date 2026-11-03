@@ -26,6 +26,10 @@ class PolicyViolation(StepError):
     """A bot broke a safety policy; never retried, handled or continued by any ``on_error``."""
 
 
+class ExpressionFailure(StepError):
+    """A ``{{ }}`` expression in the step failed to render; never retried."""
+
+
 class NestedFailure(StepError):
     """A step inside a nested block failed; ``policy`` is set when it was a policy failure."""
 

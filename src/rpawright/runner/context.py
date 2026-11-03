@@ -1,8 +1,9 @@
 """Run-wide and per-step context shared by the executor and the step handlers."""
 
 import queue
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
@@ -61,6 +62,8 @@ class RunContext:
     echo: Callable[[str], None]
     records: list[StepRecord]
     downloads: "queue.Queue[Download]"
+    env: Mapping[str, str]
+    today: date
     workspace: Path | None = None
     # Set by run_workflow so handlers never import the executor module.
     run_block: Callable[[list[Step], str], None] = _block_not_set

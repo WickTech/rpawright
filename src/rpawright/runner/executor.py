@@ -7,9 +7,12 @@ from dataclasses import asdict, dataclass
 from playwright.sync_api import Error as PlaywrightError
 
 from rpawright.runner.context import Outcome, RunContext, Status, StepContext, StepRecord
-from rpawright.runner.errors import NestedFailure, PolicyViolation, StepError
+from rpawright.runner.errors import ExpressionFailure, NestedFailure, PolicyViolation, StepError
 from rpawright.runner.handlers import HANDLERS
+from rpawright.runner.inputs import build_namespace
+from rpawright.workflow.expressions import ExpressionError
 from rpawright.workflow.models import Step, StepCommon, action_name
+from rpawright.workflow.templating import render_step
 
 __all__ = ["NestedFailure", "run_attempts", "run_step", "run_steps"]
 
@@ -45,12 +48,12 @@ def _attempt(
     count = 0
     locator_used: str | None = None
     error = ""
-    policy = nested = per_iteration = False
+    policy = nested = per_iteration = fatal = False
     cause_path: str | None = None
     for n in range(1 + retry_times):
         count = n + 1
         ctx = StepContext(page=run.page, timeout_ms=timeout_ms, step_id=step_id, run=run, path=path)
-        policy = nested = False
+        policy = nested = fatal = False
         cause_path = None
         try:
             work(ctx)
@@ -59,6 +62,8 @@ def _attempt(
             error, policy = e.message, True
         except NestedFailure as e:
             error, policy, nested, cause_path = e.message, e.policy, True, e.cause_path
+        except ExpressionFailure as e:
+            error, fatal = e.message, True
         except StepError as e:
             error = e.message
         except PlaywrightError as e:
@@ -67,7 +72,7 @@ def _attempt(
             error = f"{type(e).__name__}: {e}"
         locator_used = ctx.locator_used
         per_iteration = ctx.per_iteration
-        if policy or per_iteration or n >= retry_times:
+        if policy or fatal or per_iteration or n >= retry_times:
             break
         time.sleep(delay_s)
     if not nested and not policy and run.page.is_closed():
@@ -117,6 +122,15 @@ def _recover(
     return status, error, res.policy, res.cause_path
 
 
+def _render_and_run(run: RunContext, ctx: StepContext, step: Step, action: str) -> None:
+    """Render the step's ``{{ }}`` fields against the current scope, then run its handler."""
+    try:
+        rendered = render_step(step, build_namespace(run.scope, env=run.env, today=run.today))
+    except ExpressionError as e:
+        raise ExpressionFailure(ctx.step_id, f"{e.where}: {e}") from e
+    HANDLERS[action](ctx, rendered)
+
+
 def run_step(run: RunContext, step: Step, base_path: str) -> StepRecord:
     """Execute one step (confirm, retry, on_error), log and return its record."""
     assert step.id is not None
@@ -127,7 +141,14 @@ def run_step(run: RunContext, step: Step, base_path: str) -> StepRecord:
         run.confirm(step_id)
     timeout_ms = step.timeout_ms if step.timeout_ms is not None else run.policy.timeout_ms
     started = time.monotonic()
-    res = _attempt(run, step, step_id, path, timeout_ms, lambda ctx: HANDLERS[action](ctx, step))
+    res = _attempt(
+        run,
+        step,
+        step_id,
+        path,
+        timeout_ms,
+        lambda ctx: _render_and_run(run, ctx, step, action),
+    )
     status: Status = res.outcome
     error = res.error
     policy = res.policy

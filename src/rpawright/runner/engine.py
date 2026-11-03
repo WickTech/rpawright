@@ -1,9 +1,11 @@
 """Run a validated Workflow in Chromium with retries, on_error, a JSONL log and screenshots."""
 
+import os
 import queue
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
@@ -14,6 +16,7 @@ from rpawright.runner.artifacts import RunArtifacts
 from rpawright.runner.context import RunContext, Scope, StepRecord
 from rpawright.runner.errors import NestedFailure
 from rpawright.runner.executor import run_attempts, run_steps
+from rpawright.runner.inputs import build_namespace, init_vars, resolve_inputs
 from rpawright.workflow.models import Workflow
 
 __all__ = ["RunResult", "StepRecord", "run_workflow"]
@@ -40,8 +43,18 @@ def run_workflow(
     browser: Browser | None = None,
     workspace: Path | None = None,
     echo: Callable[[str], None] = print,
+    inputs: Mapping[str, object] | None = None,
+    env: Mapping[str, str] | None = None,
+    today: date | None = None,
 ) -> RunResult:
-    """Run ``wf``. An injected ``browser`` is left open; the context created here is closed."""
+    """Run ``wf``. An injected ``browser`` is left open; the context created here is closed.
+
+    Raises ``InputError`` (before any browser or run directory exists) for bad inputs or vars.
+    """
+    env = os.environ if env is None else env
+    today = today or date.today()
+    scope = Scope(inputs=resolve_inputs(wf, inputs or {}, env=env, today=today))
+    init_vars(wf, lambda: build_namespace(scope, env=env, today=today), scope)
     artifacts = RunArtifacts(runs_root, wf.name)
     records: list[StepRecord] = []
     failed = False
@@ -63,13 +76,15 @@ def run_workflow(
             page=page,
             artifacts=artifacts,
             policy=wf.policy,
-            scope=Scope(),
+            scope=scope,
             headed=headed,
             step_mode=step_mode,
             confirm=confirm,
             echo=echo,
             records=records,
             downloads=downloads,
+            env=env,
+            today=today,
             workspace=workspace,
         )
         run.run_block = lambda steps, path: run_steps(run, steps, path)

@@ -115,3 +115,8 @@ def expression_errors(wf: Workflow) -> list[str]:
             _check(f"inputs.{key}.default", spec.default, problems, "")
     _check_steps(list(wf.steps), "steps", problems)
     return problems
+
+
+def render_value(value: Any, namespace: Mapping[str, object], path: str) -> Any:
+    """Render a YAML-authored value (vars/defaults) once, natively; errors carry ``path``."""
+    return _render(value, namespace, path, True)
