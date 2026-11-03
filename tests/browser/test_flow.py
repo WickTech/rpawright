@@ -8,7 +8,7 @@ import pytest
 
 from rpawright.runner.context import StepContext
 from rpawright.runner.engine import RunResult
-from rpawright.runner.errors import PolicyViolation
+from rpawright.runner.errors import NestedFailure, PolicyViolation
 from rpawright.runner.handlers import HANDLERS
 from rpawright.workflow.models import Step, Workflow
 
@@ -102,6 +102,7 @@ def test_policy_violation_never_retried_or_continued(
     assert res.status == "failed" and res.exit_code == 1
     assert res.steps[0].status == "failed" and res.steps[0].attempts == 1
     assert res.steps[0].policy is True
+    assert res.steps[0].error == "not allowed"
     assert len(calls) == 1
 
 
@@ -203,3 +204,46 @@ def test_failed_step_and_failed_path_set_only_on_failure(run_bot: RunBot, site_u
     )
     assert bad.failed_step == bad.steps[-1].step_id
     assert bad.failed_path == bad.steps[-1].path == bad.failed_step
+
+
+def _recovering_handler(ctx: StepContext, step: Step) -> None:
+    """Test-only: a nested failure that the handler swallows, leaving a failed record."""
+    nested = Workflow.model_validate(
+        {
+            "version": 1,
+            "name": "x",
+            "steps": [{"id": "inner", "click": {"target": [{"css": "#nope"}]}, "timeout_ms": 200}],
+        }
+    ).steps
+    try:
+        ctx.require_run().run_block(nested, ctx.path)
+    except NestedFailure:
+        pass
+
+
+def test_failed_step_ignores_recovered_nested_failures(
+    run_bot: RunBot, site_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(HANDLERS, "wait", _recovering_handler)
+    res = run_bot(
+        {
+            "steps": [
+                _login(site_url),
+                {"id": "early", "wait": 1},
+                {"id": "late", "click": {"target": [{"css": "#missing"}]}, "timeout_ms": 300},
+            ]
+        }
+    )
+    assert any(r.path == "early/inner" and r.status == "failed" for r in res.steps)
+    assert res.exit_code == 1
+    assert res.failed_step == "late" and res.failed_path == "late"
+
+
+def test_recovered_nested_failure_leaves_run_ok(
+    run_bot: RunBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(HANDLERS, "wait", _recovering_handler)
+    res = run_bot({"steps": [{"id": "early", "wait": 1}]})
+    assert any(r.status == "failed" for r in res.steps)
+    assert res.exit_code == 0 and res.status == "ok"
+    assert res.failed_step is None and res.failed_path is None

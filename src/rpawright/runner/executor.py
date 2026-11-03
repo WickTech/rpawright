@@ -67,7 +67,7 @@ def _attempt(
         if policy or per_iteration or n >= retry_times:
             break
         time.sleep(delay_s)
-    if not nested and run.page.is_closed():
+    if not nested and not policy and run.page.is_closed():
         error = "page closed"
     return _Attempts(
         count, locator_used, error, policy=policy, nested=nested, per_iteration=per_iteration

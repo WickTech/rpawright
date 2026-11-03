@@ -90,7 +90,7 @@ def run_workflow(
                 artifacts.log(
                     {"event": "unclaimed_download", "name": downloads.get().suggested_filename}
                 )
-    failed_record = next((r for r in records if r.status == "failed"), None) if failed else None
+    failed_record = _innermost_failure(records) if failed else None
     return RunResult(
         status="failed" if failed else "ok",
         exit_code=1 if failed else 0,
@@ -106,3 +106,26 @@ def _close_quietly(context: BrowserContext) -> None:
         context.close()
     except PlaywrightError:
         pass  # the browser is already gone
+
+
+def _innermost_failure(records: list[StepRecord]) -> StepRecord | None:
+    """The innermost failed record on the chain that ended the run (R10).
+
+    Records are in completion order, children before parents, so the run-ending top-level
+    record is the last failed one; each step down is the last failed descendant before it.
+    Failed records that were recovered elsewhere are never on this chain.
+    """
+    end = len(records)
+    current: StepRecord | None = None
+    prefix: tuple[str, ...] | None = None  # None: any record is a candidate (top level)
+    while True:
+        found: StepRecord | None = None
+        for i in range(end - 1, -1, -1):
+            r = records[i]
+            if r.status == "failed" and (prefix is None or r.path.startswith(prefix)):
+                found, end = r, i
+                break
+        if found is None:
+            return current
+        current = found
+        prefix = (found.path + "/", found.path + ".", found.path + "[")
