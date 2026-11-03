@@ -19,7 +19,11 @@ from rpawright.runner.executor import run_attempts, run_steps
 from rpawright.runner.inputs import build_namespace, init_vars, resolve_inputs
 from rpawright.workflow.models import Workflow
 
-__all__ = ["RunResult", "StepRecord", "run_workflow"]
+__all__ = ["BrowserNotInstalledError", "RunResult", "StepRecord", "run_workflow"]
+
+
+class BrowserNotInstalledError(Exception):
+    """Playwright's Chromium build is missing; fix with ``playwright install chromium``."""
 
 
 @dataclass
@@ -49,22 +53,30 @@ def run_workflow(
 ) -> RunResult:
     """Run ``wf``. An injected ``browser`` is left open; the context created here is closed.
 
-    Raises ``InputError`` (before any browser or run directory exists) for bad inputs or vars.
+    Raises ``InputError`` for bad inputs or vars and ``BrowserNotInstalledError`` if Chromium is
+    missing; in both cases no run directory has been created.
     """
     env = os.environ if env is None else env
     today = today or date.today()
     scope = Scope(inputs=resolve_inputs(wf, inputs or {}, env=env, today=today))
     init_vars(wf, lambda: build_namespace(scope, env=env, today=today), scope)
-    artifacts = RunArtifacts(runs_root, wf.name)
     records: list[StepRecord] = []
     failed = False
     cause_path: str | None = None
     with ExitStack() as stack:
         if browser is None:
             pw = stack.enter_context(sync_playwright())
-            owned = pw.chromium.launch(headless=wf.policy.headless and not headed)
+            try:
+                owned = pw.chromium.launch(headless=wf.policy.headless and not headed)
+            except PlaywrightError as e:
+                msg = str(e)
+                missing_libs = "install-deps" in msg or "missing dependencies" in msg
+                if "Executable doesn't exist" in msg and not missing_libs:
+                    raise BrowserNotInstalledError(str(e)) from e
+                raise
             stack.callback(owned.close)
             browser = owned
+        artifacts = RunArtifacts(runs_root, wf.name)  # only after the browser is up
         context = browser.new_context(accept_downloads=True)
         stack.callback(_close_quietly, context)
         if trace:

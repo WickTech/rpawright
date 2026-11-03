@@ -75,7 +75,8 @@ def test_run_missing_input_exits_2_without_traceback(tmp_path: Path) -> None:
     )
     result = CliRunner().invoke(app, ["run", str(bot), "--runs-dir", str(tmp_path / "runs")])
     assert result.exit_code == 2
-    assert "missing required input 'month'" in result.output
+    assert "missing required input 'month'" in result.stderr
+    assert result.stdout == ""
     assert "Traceback" not in result.output
     assert not (tmp_path / "runs").exists()
 
@@ -96,7 +97,8 @@ def test_run_bad_int_input_exits_2(tmp_path: Path) -> None:
         app, ["run", str(bot), "--runs-dir", str(tmp_path / "runs"), "--input", "n=seven"]
     )
     assert result.exit_code == 2
-    assert "error  " in result.output
+    assert "error  " in result.stderr
+    assert "error  " not in result.stdout
     assert "Traceback" not in result.output
 
 
@@ -109,3 +111,14 @@ def test_run_vars_expression_error_exits_2(tmp_path: Path) -> None:
     assert result.exit_code == 2
     assert "vars.x: 'nope' is undefined" in result.output
     assert not (tmp_path / "runs").exists()
+
+
+def test_step_mode_eof_aborts_cleanly(tmp_path: Path) -> None:
+    bot = _bot(tmp_path, _LOG_BOT)
+    result = CliRunner().invoke(
+        app, ["run", str(bot), "--step", "--runs-dir", str(tmp_path / "runs")], input=""
+    )
+    assert result.exit_code == 1
+    assert result.stderr.strip().endswith("aborted")
+    assert "press Enter to run" in result.stdout
+    assert "Traceback" not in result.output

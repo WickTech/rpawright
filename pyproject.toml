@@ -9,6 +9,18 @@ description = "Open-source, self-healing web RPA: record browser tasks to YAML, 
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
+keywords = ["rpa", "automation", "playwright", "yaml", "browser", "web-automation", "testing"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+]
 requires-python = ">=3.12"
 dependencies = [
     "typer>=0.12",
@@ -19,6 +31,11 @@ dependencies = [
     "httpx>=0.27",
     "openpyxl>=3.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/WickTech/rpawright"
+Repository = "https://github.com/WickTech/rpawright"
+Issues = "https://github.com/WickTech/rpawright/issues"
 
 [project.scripts]
 rpawright = "rpawright.cli:app"
