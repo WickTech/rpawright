@@ -20,3 +20,15 @@ class LocatorNotFound(StepError):
 
 class AssertionFailed(StepError):
     """An assert step did not hold."""
+
+
+class PolicyViolation(StepError):
+    """A bot broke a safety policy; never retried, handled or continued by any ``on_error``."""
+
+
+class NestedFailure(StepError):
+    """A step inside a nested block failed; ``policy`` is set when it was a policy failure."""
+
+    def __init__(self, step_id: str, message: str, *, policy: bool = False) -> None:
+        super().__init__(step_id, message)
+        self.policy = policy

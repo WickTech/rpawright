@@ -2,19 +2,14 @@
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from typing import Any
 
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import FrameLocator, Page
 
+from rpawright.runner.context import StepContext
 from rpawright.runner.errors import AssertionFailed, LocatorNotFound, StepError
-from rpawright.runner.locate import (
-    Resolved,
-    build_locator,
-    describe,
-    frame_scope,
-    resolve_target,
-)
+from rpawright.runner.locate import build_locator, describe, frame_scope, poll_until
 from rpawright.workflow.models import (
     AssertStep,
     ClickStep,
@@ -29,22 +24,6 @@ from rpawright.workflow.models import (
 )
 
 
-@dataclass
-class StepContext:
-    page: Page
-    timeout_ms: int
-    step_id: str
-    locator_used: str | None = None
-
-
-def _resolve(ctx: StepContext, targets: list[Target], frame: list[Target] | None) -> Resolved:
-    resolved = resolve_target(
-        ctx.page, targets, frame=frame, timeout_ms=ctx.timeout_ms, step_id=ctx.step_id
-    )
-    ctx.locator_used = describe(targets[resolved.index])
-    return resolved
-
-
 def _goto(ctx: StepContext, step: Step) -> None:
     assert isinstance(step, GotoStep)
     try:
@@ -55,13 +34,13 @@ def _goto(ctx: StepContext, step: Step) -> None:
 
 def _click(ctx: StepContext, step: Step) -> None:
     assert isinstance(step, ClickStep)
-    _resolve(ctx, step.click.target, step.click.frame).locator.click(timeout=ctx.timeout_ms)
+    ctx.resolve(step.click.target, step.click.frame).locator.click(timeout=ctx.timeout_ms)
 
 
 def _fill(ctx: StepContext, step: Step) -> None:
     assert isinstance(step, FillStep)
     body = step.fill
-    _resolve(ctx, body.target, body.frame).locator.fill(body.value, timeout=ctx.timeout_ms)
+    ctx.resolve(body.target, body.frame).locator.fill(body.value, timeout=ctx.timeout_ms)
 
 
 def _press(ctx: StepContext, step: Step) -> None:
@@ -74,7 +53,7 @@ def _press(ctx: StepContext, step: Step) -> None:
     if body.target is None:
         ctx.page.keyboard.press(body.key)
         return
-    loc = _resolve(ctx, body.target, body.frame).locator
+    loc = ctx.resolve(body.target, body.frame).locator
     loc.focus(timeout=ctx.timeout_ms)
     ctx.page.keyboard.press(body.key)
 
@@ -91,8 +70,7 @@ def _any_visible(scope: Page | FrameLocator, targets: list[Target]) -> bool:
 def _wait_hidden(ctx: StepContext, targets: list[Target], frame: list[Target] | None) -> None:
     # Hidden means no match of any candidate is visible; a missing element or frame counts
     # as hidden.
-    deadline = time.monotonic() + ctx.timeout_ms / 1000
-    while True:
+    def check() -> bool | None:
         try:
             scope: Page | FrameLocator = ctx.page
             if frame:
@@ -109,25 +87,21 @@ def _wait_hidden(ctx: StepContext, targets: list[Target], frame: list[Target] | 
             visible = False
         except PlaywrightError:
             visible = False  # a detached or invalid element counts as hidden
-        if not visible:
-            return
-        if time.monotonic() >= deadline:
-            raise StepError(
-                ctx.step_id,
-                f"still visible after {ctx.timeout_ms} ms: "
-                + ", ".join(describe(t) for t in targets),
-            )
-        ctx.page.wait_for_timeout(250)
+        return None if visible else True
+
+    if poll_until(ctx.page, check, timeout_ms=ctx.timeout_ms) is None:
+        raise StepError(
+            ctx.step_id,
+            f"still visible after {ctx.timeout_ms} ms: " + ", ".join(describe(t) for t in targets),
+        )
 
 
 def _wait_url(ctx: StepContext, needle: str) -> str | None:
     """Poll until the page url contains ``needle``. Returns None on success, else the last url."""
-    deadline = time.monotonic() + ctx.timeout_ms / 1000
-    while needle not in ctx.page.url:
-        if time.monotonic() >= deadline:
-            return ctx.page.url
-        ctx.page.wait_for_timeout(250)
-    return None
+    hit = poll_until(
+        ctx.page, lambda: True if needle in ctx.page.url else None, timeout_ms=ctx.timeout_ms
+    )
+    return None if hit else ctx.page.url
 
 
 def _wait(ctx: StepContext, step: Step) -> None:
@@ -141,7 +115,7 @@ def _wait(ctx: StepContext, step: Step) -> None:
         ctx.page.wait_for_timeout(body.ms)
     elif body.target is not None:
         if body.state == "visible":
-            _resolve(ctx, body.target, body.frame)
+            ctx.resolve(body.target, body.frame)
         else:
             _wait_hidden(ctx, body.target, body.frame)
     else:
@@ -178,20 +152,20 @@ def _assert(ctx: StepContext, step: Step) -> None:
                 "expected hidden, actual visible: " + ", ".join(describe(t) for t in body.target),
             ) from e
         return
-    resolved = _resolve(ctx, body.target, body.frame)
+    resolved = ctx.resolve(body.target, body.frame)
     loc = resolved.locator
     if body.text_contains is not None:
-        deadline = time.monotonic() + ctx.timeout_ms / 1000
-        while True:
-            actual = loc.inner_text(timeout=ctx.timeout_ms)
-            if body.text_contains in actual:
-                break
-            if time.monotonic() >= deadline:
-                raise AssertionFailed(
-                    ctx.step_id,
-                    f"expected text containing {body.text_contains!r}, actual {actual!r}",
-                )
-            ctx.page.wait_for_timeout(250)
+        needle = body.text_contains
+        last = {"actual": ""}
+
+        def text_matches() -> bool | None:
+            last["actual"] = loc.inner_text(timeout=ctx.timeout_ms)
+            return True if needle in last["actual"] else None
+
+        if poll_until(ctx.page, text_matches, timeout_ms=ctx.timeout_ms) is None:
+            raise AssertionFailed(
+                ctx.step_id, f"expected text containing {needle!r}, actual {last['actual']!r}"
+            )
     if body.visible is not None:
         actual_visible = loc.is_visible()
         if actual_visible != body.visible:
@@ -200,7 +174,7 @@ def _assert(ctx: StepContext, step: Step) -> None:
             )
 
 
-HANDLERS: dict[str, Callable[[StepContext, Step], None]] = {
+M1_HANDLERS: dict[str, Callable[[StepContext, Step], None]] = {
     "goto": _goto,
     "click": _click,
     "fill": _fill,
@@ -208,3 +182,14 @@ HANDLERS: dict[str, Callable[[StepContext, Step], None]] = {
     "wait": _wait,
     "assert": _assert,
 }
+
+__all__ = ["M1_HANDLERS", "StepContext"]
+
+
+def __getattr__(name: str) -> Any:
+    # Lazy so handlers.py (which imports M1_HANDLERS from here) causes no import cycle.
+    if name == "HANDLERS":
+        from rpawright.runner.handlers import HANDLERS
+
+        return HANDLERS
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

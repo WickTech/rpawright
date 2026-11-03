@@ -3,7 +3,7 @@ import time
 import pytest
 
 from rpawright.runner.errors import LocatorNotFound
-from rpawright.runner.locate import resolve_target
+from rpawright.runner.locate import build_locator, poll_until, resolve_target
 from rpawright.workflow.models import Target
 
 T = Target.model_validate
@@ -133,3 +133,55 @@ def test_only_hidden_element_raises(page, site_url) -> None:  # type: ignore[no-
     with pytest.raises(LocatorNotFound) as e:
         resolve_target(page, [T({"css": "#hidden"})], frame=None, timeout_ms=400, step_id="s")
     assert e.value.tried == [("css=#hidden", 1)]
+
+
+def test_poll_until_returns_first_value(page) -> None:  # type: ignore[no-untyped-def]
+    calls: list[int] = []
+
+    def check() -> str | None:
+        calls.append(1)
+        return "hit" if len(calls) == 3 else None
+
+    assert poll_until(page, check, timeout_ms=5000, poll_ms=10) == "hit"
+    assert len(calls) == 3
+
+
+def test_poll_until_times_out_and_does_not_overshoot(page) -> None:  # type: ignore[no-untyped-def]
+    started = time.monotonic()
+    assert poll_until(page, lambda: None, timeout_ms=300, poll_ms=250) is None
+    assert time.monotonic() - started < 1.0
+
+
+def test_poll_until_checks_once_even_with_zero_timeout(page) -> None:  # type: ignore[no-untyped-def]
+    calls: list[int] = []
+    assert poll_until(page, lambda: calls.append(1), timeout_ms=0) is None
+    assert calls == [1]
+
+
+def test_poll_until_waits_via_playwright(page, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    waits: list[float] = []
+    real = page.wait_for_timeout
+
+    def spy(ms: float) -> None:
+        waits.append(ms)
+        real(ms)
+
+    def no_sleep(_s: float) -> None:
+        raise AssertionError("time.sleep must not be used")
+
+    monkeypatch.setattr(page, "wait_for_timeout", spy)
+    monkeypatch.setattr(time, "sleep", no_sleep)
+    assert poll_until(page, lambda: None, timeout_ms=300, poll_ms=250) is None
+    assert waits
+    assert all(0 < w <= 250 for w in waits)
+
+
+def test_build_locator_xpath_nth_exact(page, site_url) -> None:  # type: ignore[no-untyped-def]
+    page.goto(f"{site_url}/ambiguous.html")
+    assert build_locator(page, T({"xpath": "//button"})).count() == 3
+    nth = build_locator(page, T({"text": "Save", "nth": 1}))
+    assert nth.get_attribute("data-testid") is None and nth.count() == 1
+    exact = build_locator(page, T({"role": "button", "name": "Sav", "exact": True}))
+    loose = build_locator(page, T({"role": "button", "name": "Sav", "exact": False}))
+    assert exact.count() == 0
+    assert loose.count() == 3
