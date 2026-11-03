@@ -8,7 +8,7 @@ import pytest
 
 from rpawright.runner.context import StepContext
 from rpawright.runner.engine import RunResult
-from rpawright.runner.errors import NestedFailure, PolicyViolation
+from rpawright.runner.errors import NestedFailure, PolicyViolation, StepError
 from rpawright.runner.handlers import HANDLERS
 from rpawright.workflow.models import Step, Workflow
 
@@ -247,3 +247,70 @@ def test_recovered_nested_failure_leaves_run_ok(
     assert any(r.status == "failed" for r in res.steps)
     assert res.exit_code == 0 and res.status == "ok"
     assert res.failed_step is None and res.failed_path is None
+
+
+def _steps(*steps: dict[str, object]) -> list[Step]:
+    return Workflow.model_validate({"version": 1, "name": "x", "steps": list(steps)}).steps
+
+
+_MISSING = {"click": {"target": [{"css": "#nope"}]}, "timeout_ms": 200}
+
+
+def test_failed_step_with_dotted_and_slashed_ids(
+    run_bot: RunBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def recover(ctx: StepContext, step: Step) -> None:
+        try:
+            ctx.require_run().run_block(_steps({"id": "field", **_MISSING}), ctx.path)
+        except NestedFailure:
+            pass
+
+    monkeypatch.setitem(HANDLERS, "wait", recover)
+    res = run_bot(
+        {
+            "steps": [
+                {"id": "login.submit", "wait": 1},
+                {"id": "login", "click": {"target": [{"css": "#missing"}]}, "timeout_ms": 200},
+            ]
+        }
+    )
+    assert any(r.path == "login.submit/field" and r.status == "failed" for r in res.steps)
+    assert res.failed_step == "login" and res.failed_path == "login"
+
+
+def test_retried_block_failing_on_its_own_is_the_failed_step(
+    run_bot: RunBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    attempt = {"n": 0}
+
+    def block(ctx: StepContext, step: Step) -> None:
+        attempt["n"] += 1
+        child = _MISSING if attempt["n"] == 1 else {"wait": 1}
+        ctx.require_run().run_block(_steps({"id": "c", **child}), ctx.path)
+        if attempt["n"] == 2:
+            raise StepError(ctx.step_id, "own failure")
+
+    monkeypatch.setitem(HANDLERS, "press", block)
+    res = run_bot({"steps": [{"id": "X", "press": "Enter", "retry": {"times": 1, "delay_ms": 10}}]})
+    assert attempt["n"] == 2
+    assert any(r.path == "X/c" and r.status == "failed" for r in res.steps)
+    assert res.failed_step == "X" and res.failed_path == "X"
+    assert res.steps[-1].error == "own failure"
+
+
+def test_cause_path_survives_two_nesting_levels(
+    run_bot: RunBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def outer(ctx: StepContext, step: Step) -> None:
+        ctx.require_run().run_block(_steps({"id": "mid", "press": "Enter"}), ctx.path)
+
+    def mid(ctx: StepContext, step: Step) -> None:
+        ctx.require_run().run_block(_steps({"id": "leaf", **_MISSING}), ctx.path)
+
+    monkeypatch.setitem(HANDLERS, "wait", outer)
+    monkeypatch.setitem(HANDLERS, "press", mid)
+    res = run_bot({"steps": [{"id": "outer", "wait": 1}]})
+    assert res.exit_code == 1
+    assert res.failed_step == "leaf" and res.failed_path == "outer/mid/leaf"
+    log = _log(res)
+    assert all("cause_path" not in rec for rec in log)

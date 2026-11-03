@@ -29,6 +29,10 @@ class PolicyViolation(StepError):
 class NestedFailure(StepError):
     """A step inside a nested block failed; ``policy`` is set when it was a policy failure."""
 
-    def __init__(self, step_id: str, message: str, *, policy: bool = False) -> None:
+    def __init__(
+        self, step_id: str, message: str, *, policy: bool = False, cause_path: str | None = None
+    ) -> None:
         super().__init__(step_id, message)
         self.policy = policy
+        # Path of the innermost failed record that caused this failure.
+        self.cause_path = cause_path

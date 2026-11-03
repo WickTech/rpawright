@@ -29,6 +29,9 @@ class StepRecord:
     path: str = ""
     # Set when the failure was a policy failure; kept out of log.jsonl.
     policy: bool = False
+    # Path of the innermost failed record when this step failed because a nested block did;
+    # None for a failure of the step's own. Not written to log.jsonl.
+    cause_path: str | None = None
 
 
 @dataclass

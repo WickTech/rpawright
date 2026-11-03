@@ -23,6 +23,7 @@ class _Attempts:
     policy: bool = False
     nested: bool = False
     per_iteration: bool = False
+    cause_path: str | None = None
 
 
 def _first_line(e: Exception) -> str:
@@ -45,17 +46,19 @@ def _attempt(
     locator_used: str | None = None
     error = ""
     policy = nested = per_iteration = False
+    cause_path: str | None = None
     for n in range(1 + retry_times):
         count = n + 1
         ctx = StepContext(page=run.page, timeout_ms=timeout_ms, step_id=step_id, run=run, path=path)
         policy = nested = False
+        cause_path = None
         try:
             work(ctx)
             return _Attempts(count, ctx.locator_used, None, outcome=ctx.outcome)
         except PolicyViolation as e:
             error, policy = e.message, True
         except NestedFailure as e:
-            error, policy, nested = e.message, e.policy, True
+            error, policy, nested, cause_path = e.message, e.policy, True, e.cause_path
         except StepError as e:
             error = e.message
         except PlaywrightError as e:
@@ -70,14 +73,20 @@ def _attempt(
     if not nested and not policy and run.page.is_closed():
         error = "page closed"
     return _Attempts(
-        count, locator_used, error, policy=policy, nested=nested, per_iteration=per_iteration
+        count,
+        locator_used,
+        error,
+        policy=policy,
+        nested=nested,
+        per_iteration=per_iteration,
+        cause_path=cause_path,
     )
 
 
 def _recover(
     run: RunContext, owner: StepCommon, path: str, step_id: str, res: _Attempts
-) -> tuple[Status, str, bool]:
-    """Apply ``on_error`` to a failed attempt run. Returns (status, error text, policy)."""
+) -> tuple[Status, str, bool, str | None]:
+    """Apply ``on_error`` to a failed attempt run. Returns (status, error, policy, cause_path)."""
     assert res.error is not None
     error = res.error
     if res.policy or res.per_iteration:
@@ -99,8 +108,13 @@ def _recover(
         try:
             run_steps(run, owner.on_error, path + ".on_error")
         except NestedFailure as e:
-            return "failed", f"{error}; on_error handler failed: {e.message}", e.policy
-    return status, error, res.policy
+            return (
+                "failed",
+                f"{error}; on_error handler failed: {e.message}",
+                e.policy,
+                e.cause_path,
+            )
+    return status, error, res.policy, res.cause_path
 
 
 def run_step(run: RunContext, step: Step, base_path: str) -> StepRecord:
@@ -117,8 +131,9 @@ def run_step(run: RunContext, step: Step, base_path: str) -> StepRecord:
     status: Status = res.outcome
     error = res.error
     policy = res.policy
+    cause_path: str | None = None
     if res.error is not None:
-        status, error, policy = _recover(run, step, path, step_id, res)
+        status, error, policy, cause_path = _recover(run, step, path, step_id, res)
     record = StepRecord(
         step_id=step_id,
         action=action,
@@ -129,10 +144,11 @@ def run_step(run: RunContext, step: Step, base_path: str) -> StepRecord:
         error=error,
         path=path,
         policy=policy,
+        cause_path=cause_path if status == "failed" else None,
     )
     run.records.append(record)
     entry = asdict(record)
-    del entry["policy"]
+    del entry["policy"], entry["cause_path"]
     run.artifacts.log({"event": "step", **entry})
     return record
 
@@ -146,6 +162,7 @@ def run_steps(run: RunContext, steps: list[Step], base_path: str = "") -> None:
                 record.step_id,
                 f"nested step {record.step_id} failed: {record.error}",
                 policy=record.policy,
+                cause_path=record.cause_path or record.path,
             )
 
 
@@ -160,7 +177,7 @@ def run_attempts(run: RunContext, steps: list[Step], path: str, owner: StepCommo
     res = _attempt(run, owner, step_id, path, timeout_ms, lambda ctx: run_steps(run, steps, path))
     if res.error is None:
         return "ok"
-    status, error, policy = _recover(run, owner, path, step_id, res)
+    status, error, policy, cause_path = _recover(run, owner, path, step_id, res)
     if status == "failed":
-        raise NestedFailure(step_id, error, policy=policy)
+        raise NestedFailure(step_id, error, policy=policy, cause_path=cause_path)
     return "continued" if status == "continued" else "handled"
