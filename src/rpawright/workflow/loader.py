@@ -41,6 +41,8 @@ def _join(loc: tuple[int | str, ...], msg: str) -> str:
     return f"{where}: {_clean_msg(msg)}" if where else _clean_msg(msg)
 
 
+# Deeply nested workflows may be rejected with "nesting too deep"; the exact limit depends on
+# the platform (tested to 40 levels on all platforms).
 _TOO_DEEP = "nesting too deep"
 _STEP_LISTS = ("steps", "then", "else", "on_error")
 
@@ -75,6 +77,8 @@ def _in_list_branch(loc: tuple[int | str, ...], prefix: tuple[int | str, ...]) -
 def _first_error(exc: ValidationError) -> str:
     """Format the first error; steps are tagged unions, so errors only name the chosen model."""
     errors = exc.errors()
+    if any(e["type"] == "recursion_loop" or "Recursion error" in e["msg"] for e in errors):
+        return _TOO_DEEP
     err = errors[0]
     last = err["loc"][-1:]
     if last and str(last[0]).startswith("literal[") and isinstance(err["input"], list):

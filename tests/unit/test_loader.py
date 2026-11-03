@@ -1,10 +1,12 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from rpawright.cli import app
 from rpawright.workflow.loader import WorkflowError, load_workflow
+from rpawright.workflow.models import Workflow
 
 
 def test_yaml_syntax_error_reports_line(tmp_path: Path) -> None:
@@ -204,5 +206,23 @@ def test_deep_nesting_is_clean_error(tmp_path: Path) -> None:
 
 def test_moderate_nesting_still_loads(tmp_path: Path) -> None:
     p = tmp_path / "ok.yaml"
-    p.write_text(_nested_if(200))
+    p.write_text(_nested_if(40))
     load_workflow(p)
+
+
+def test_pydantic_recursion_guard_reports_nesting_too_deep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(*_: object, **__: object) -> None:
+        raise ValidationError.from_exception_data(
+            "Workflow",
+            [{"type": "recursion_loop", "loc": ("steps", 0, "if", "then", 0), "input": None}],
+        )
+
+    monkeypatch.setattr(Workflow, "model_validate", boom)
+    p = tmp_path / "d.yaml"
+    p.write_text(_nested_if(2))
+    with pytest.raises(WorkflowError) as e:
+        load_workflow(p)
+    assert e.value.message == "nesting too deep"
+    assert str(e.value).endswith("nesting too deep") and "if.then" not in str(e.value)
