@@ -9,6 +9,12 @@ Security model
 * ``StrictUndefined``: any undefined name or attribute is an ``ExpressionError``.
 * ``**``, ``*`` and ``%`` are intercepted at render time and size-capped, because Jinja would
   otherwise constant-fold e.g. ``9**99999999`` while compiling (a DoS for ``validate``).
+* **No calls at all**: ``f(...)`` and ``obj.method(...)`` raise ``ExpressionError``.  Methods
+  (``'a'.ljust(10**10)``, ``(1).to_bytes(...)``, ``inputs.items()``) can amplify memory, so they
+  are unavailable; use the filters instead.  Filters and tests do not go through ``call``.
+* Amplification is capped: repeated sequences by deep size, ``join`` output by length, and every
+  result (native or rendered text) by a final size limit.  Native results must be plain data
+  (text, numbers, bool, None, dates, and lists/dicts of those); ``self`` is not a valid name.
 * ``format``/``format_map`` attribute access is blocked and ``fmt`` only ever calls the builtin
   ``format(value, spec)`` / ``strftime`` with a bounded spec, never ``spec.format(...)``.
 
@@ -27,9 +33,10 @@ from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any
 
-from jinja2 import Environment, StrictUndefined, TemplateError, nodes
+from jinja2 import Environment, StrictUndefined, TemplateError, nodes, pass_eval_context
 from jinja2.exceptions import SecurityError
 from jinja2.filters import FILTERS as DEFAULT_FILTERS
+from jinja2.nodes import EvalContext
 from jinja2.runtime import Context, Undefined
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 from jinja2.tests import TESTS as DEFAULT_TESTS
@@ -40,6 +47,8 @@ _MAX_REPEAT_LEN = 100_000
 _MAX_SPEC_LEN = 20
 _MAX_SPEC_NUMBER = 100
 _MAX_DEPTH = 8
+_MAX_JOIN_LEN = 100_000
+_MAX_RESULT_SIZE = 1_000_000
 _STATEMENT_MESSAGE = "only {{ }} expressions are allowed (no {% %} or {# #})"
 _FORBIDDEN_TOKENS = frozenset(
     {"block_begin", "comment_begin", "raw_begin", "linestatement_begin", "linecomment_begin"}
@@ -163,6 +172,65 @@ def _is_int(value: object) -> bool:
     return isinstance(value, int)
 
 
+def _deep_size(value: object, limit: int, depth: int = 0) -> int:
+    """Characters plus scalar leaves of ``value``; returns early once above ``limit``."""
+    if isinstance(value, str | bytes):
+        return len(value)
+    if isinstance(value, list | tuple | set | frozenset | dict):
+        if depth >= _MAX_DEPTH:
+            return limit + 1
+        total = 0
+        items = [x for kv in value.items() for x in kv] if isinstance(value, dict) else value
+        for item in items:
+            total += _deep_size(item, limit - total, depth + 1)
+            if total > limit:
+                return total
+        return max(total, 1)
+    return 1
+
+
+@pass_eval_context
+def _join(eval_ctx: EvalContext, value: Any, d: object = "", attribute: Any = None) -> Any:
+    original = DEFAULT_FILTERS["join"]
+    if attribute is None:
+        items = list(value)
+        if _deep_size(items, _MAX_JOIN_LEN) + len(items) * len(str(d)) > _MAX_JOIN_LEN:
+            raise ExpressionError(f"join output exceeds {_MAX_JOIN_LEN} characters")
+        value = items
+    result = original(eval_ctx, value, d, attribute)
+    if len(result) > _MAX_JOIN_LEN:
+        raise ExpressionError(f"join output exceeds {_MAX_JOIN_LEN} characters")
+    return result
+
+
+def _check_result(value: object, budget: list[int], depth: int = 0) -> None:
+    """Native results must be plain data of bounded size (R25 / DoS last line of defense)."""
+    if isinstance(value, Unavailable):
+        raise ExpressionError(value._message)
+    if isinstance(value, Undefined):
+        str(value)  # StrictUndefined raises its own descriptive error here
+        raise ExpressionError("undefined value")  # pragma: no cover - defensive
+    if value is None or isinstance(value, bool | int | float | date):
+        budget[0] -= 1
+    elif isinstance(value, str):
+        budget[0] -= max(len(value), 1)
+    elif isinstance(value, list | tuple | dict):
+        if depth >= _MAX_DEPTH:
+            raise ExpressionError("result is nested too deeply")
+        budget[0] -= 1
+        if isinstance(value, dict):
+            for key, item in value.items():
+                _check_result(key, budget, depth + 1)
+                _check_result(item, budget, depth + 1)
+        else:
+            for item in value:
+                _check_result(item, budget, depth + 1)
+    else:
+        raise ExpressionError(f"{type(value).__name__} values are not allowed as results")
+    if budget[0] < 0:
+        raise ExpressionError(f"result exceeds {_MAX_RESULT_SIZE} characters/elements")
+
+
 class _SafeEnvironment(ImmutableSandboxedEnvironment):
     intercepted_binops = frozenset({"**", "*", "%"})
 
@@ -174,6 +242,11 @@ class _SafeEnvironment(ImmutableSandboxedEnvironment):
     def wrap_str_format(self, value: Any) -> Any:
         return None  # the unsafe-attribute check in is_safe_attribute blocks ``str.format``
 
+    def call(self, __context: Context, __obj: Any, *args: Any, **kwargs: Any) -> Any:
+        raise SecurityError(
+            "calling functions or methods is not allowed in expressions; use filters"
+        )
+
     def call_binop(self, context: Context, operator_: str, left: Any, right: Any) -> Any:
         if operator_ == "%" and isinstance(left, str | bytes):
             raise SecurityError("'%' string formatting is not allowed")
@@ -183,7 +256,11 @@ class _SafeEnvironment(ImmutableSandboxedEnvironment):
         elif operator_ == "*":
             for seq, count in ((left, right), (right, left)):
                 if _is_repeatable(seq) and _is_int(count):
-                    if len(seq) * max(count, 0) > _MAX_REPEAT_LEN:
+                    times = max(count, 0)
+                    if (
+                        len(seq) * times > _MAX_REPEAT_LEN
+                        or _deep_size(seq, _MAX_REPEAT_LEN) * times > _MAX_REPEAT_LEN
+                    ):
                         raise SecurityError(f"repeated length exceeds {_MAX_REPEAT_LEN}")
             if _is_int(left) and _is_int(right):
                 if left.bit_length() + right.bit_length() > _MAX_RESULT_BITS:
@@ -203,6 +280,7 @@ def make_environment() -> ImmutableSandboxedEnvironment:
         env.filters[name] = DEFAULT_FILTERS[name]
     for name in _ALLOWED_TESTS:
         env.tests[name] = DEFAULT_TESTS[name]
+    env.filters["join"] = _join
     env.filters["fmt"] = _fmt
     env.filters["prev_month"] = _prev_month
     env.filters["where"] = _where
@@ -245,9 +323,12 @@ def is_whole_expression(text: str) -> bool:
 def _reject_statements(env: Environment, text: str) -> None:
     if _FORBIDDEN_TOKENS & set(_token_kinds(env, text)):
         raise ExpressionError(_STATEMENT_MESSAGE)
-    for node in env.parse(text).body:
+    tree = env.parse(text)
+    for node in tree.body:
         if not isinstance(node, nodes.Output):
             raise ExpressionError(_STATEMENT_MESSAGE)
+    if any(name.name == "self" for name in tree.find_all(nodes.Name)):
+        raise ExpressionError("'self' is not available in expressions")
 
 
 def _describe(exc: Exception, expression: str) -> ExpressionError:
@@ -264,33 +345,22 @@ def _describe(exc: Exception, expression: str) -> ExpressionError:
     return ExpressionError(message, expression)
 
 
-def _reject_undefined(value: object, depth: int = 0) -> None:
-    if isinstance(value, Undefined):
-        str(value)  # StrictUndefined raises its own descriptive error here
-        raise ExpressionError("undefined value")  # pragma: no cover - defensive
-    if depth >= _MAX_DEPTH:
-        return
-    if isinstance(value, list | tuple | set | frozenset):
-        for item in value:
-            _reject_undefined(item, depth + 1)
-    elif isinstance(value, dict):
-        for item in value.values():
-            _reject_undefined(item, depth + 1)
-
-
 def evaluate(text: str, namespace: Mapping[str, object], *, native: bool) -> object:
     """Evaluate one YAML-authored string, once (see the module docstring)."""
     env = _ENV
     expression = text
     try:
+        _reject_statements(env, text)
         inner = _whole_inner(env, text)
         if inner is not None:
             expression = inner.strip()
             result = env.compile_expression(inner, undefined_to_none=False)(dict(namespace))
-            _reject_undefined(result)
+            _check_result(result, [_MAX_RESULT_SIZE])
             return result if native else str(result)
-        _reject_statements(env, text)
-        return env.from_string(text).render(dict(namespace))
+        rendered = env.from_string(text).render(dict(namespace))
+        if len(rendered) > _MAX_RESULT_SIZE:
+            raise ExpressionError(f"result exceeds {_MAX_RESULT_SIZE} characters/elements")
+        return rendered
     except Exception as exc:
         raise _describe(exc, expression) from exc
 
@@ -299,11 +369,11 @@ def check_syntax(text: str) -> str | None:
     """Compile (never run) ``text``; return an error message or ``None``."""
     env = _ENV
     try:
+        _reject_statements(env, text)
         inner = _whole_inner(env, text)
         if inner is not None:
             env.compile_expression(inner, undefined_to_none=False)
         else:
-            _reject_statements(env, text)
             env.from_string(text)
     except Exception as exc:
         return _describe(exc, "").message

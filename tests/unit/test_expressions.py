@@ -241,3 +241,94 @@ def test_environment_surface_is_the_allowlist() -> None:
     assert not env.globals
     assert env.autoescape is False
     assert env.intercepted_binops == frozenset({"**", "*", "%"})
+
+
+AMPLIFIERS = [
+    "{{ 'a'.ljust(10**10) }}",
+    "{{ ('a'*100000).replace('a','a'*100000) }}",
+    "{{ (1).to_bytes(10**10,'big') }}",
+    "{{ 'a'.zfill(10**8) }}",
+    "{{ 'a'.center(10**8) }}",
+    "{{ '\\t'.expandtabs(10**8) }}",
+    "{{ inputs.items() }}",
+    "{{ 'abc'.upper() }}",
+    "{{ rows.copy() }}",
+    "x{{ 'a'.ljust(10**10) }}",
+    "{{ [[1]*100000]*100000 }}",
+    "{{ [[1]*100000]*2 }}",
+    "{{ ((1,)*1000)*1000*1000 }}",
+    "{{ (['a'*100000]*1000) | join }}",
+    "{{ (['a'*100000]*100000) | join }}",
+    "{{ ([[]]*100000) * 100000 }}",
+    "{{ [1,2,3] | join('x'*100000) }}",
+    "{{ self }}",
+    "{{ secret }}",
+    "{{ secret | default('x') }}",
+    "{{ self.x }}",
+    "a {{ self }}",
+]
+
+
+@pytest.mark.parametrize("expr", AMPLIFIERS)
+def test_calls_and_amplification_are_refused_quickly(expr: str) -> None:
+    ns = {**NS, "inputs": {"a": 1}, "secret": SECRET}
+    start = time.monotonic()
+    with pytest.raises(ExpressionError):
+        evaluate(expr, ns, native=True)
+    assert time.monotonic() - start < 2.0
+    with pytest.raises(ExpressionError):
+        evaluate(expr, ns, native=False)
+
+
+def test_call_denial_message_points_to_filters() -> None:
+    with pytest.raises(ExpressionError, match="use filters"):
+        ev("{{ 'a'.upper() }}")
+
+
+def test_filters_and_tests_still_work_without_calls() -> None:
+    assert ev("{{ ' a ' | trim | upper }}") == "A"
+    assert ev("{{ [1, 2] | join('-') }}") == "1-2"
+    assert ev("{{ 7 | fmt('03d') }}") == "007"
+    assert ev("{{ rows | where('Month', '2026-10') | length }}") == 1
+    assert ev("{{ missing | default('d') }}") == "d"
+    assert ev("{{ n is number }}") is True
+    assert ev("{{ ['a' * 50000, 'b' * 49999] | join('') | length }}") == 99999
+    assert ev("{{ (['ab'] * 3) | join('') }}") == "ababab"
+
+
+def test_nested_repeat_within_cap_works() -> None:
+    assert ev("{{ ([[1] * 10] * 10) | length }}") == 10
+
+
+def test_final_result_size_cap() -> None:
+    big = "x" * 600_000
+    with pytest.raises(ExpressionError, match="exceeds"):
+        evaluate("{{ a }}{{ a }}", {"a": big}, native=False)
+    with pytest.raises(ExpressionError, match="exceeds"):
+        evaluate("{{ a }}", {"a": [big, big]}, native=True)
+    with pytest.raises(ExpressionError, match="exceeds"):
+        evaluate("{{ a + a }}", {"a": big}, native=True)
+    assert len(str(evaluate("{{ a }}", {"a": big}, native=True))) == 600_000
+
+
+def test_native_results_must_be_plain_data() -> None:
+    assert ev("{{ [1, 'a', None, true, 1.5, {'k': [today]}] }}") == [
+        1, "a", None, True, 1.5, {"k": [date(2026, 1, 15)]},
+    ]  # fmt: skip
+    with pytest.raises(ExpressionError, match="not allowed"):
+        ev("{{ o }}", o=object())
+    with pytest.raises(ExpressionError, match="not allowed"):
+        ev("{{ [o] }}", o=object())
+    with pytest.raises(ExpressionError, match="not allowed"):
+        ev("{{ s }}", s={1, 2})
+
+
+def test_join_output_is_capped_for_namespace_data() -> None:
+    parts = ["a" * 60_000, "b" * 60_000]
+    with pytest.raises(ExpressionError, match="join output"):
+        evaluate("{{ parts | join('') }}", {"parts": parts}, native=True)
+    with pytest.raises(ExpressionError, match="join output"):
+        evaluate(
+            "{{ parts | join(attribute='k') }}", {"parts": [{"k": p} for p in parts]}, native=True
+        )
+    assert evaluate("{{ parts | join('-') | length }}", {"parts": ["a", "b"]}, native=True) == 3
