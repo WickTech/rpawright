@@ -7,7 +7,13 @@ from dataclasses import asdict, dataclass
 from playwright.sync_api import Error as PlaywrightError
 
 from rpawright.runner.context import Outcome, RunContext, Status, StepContext, StepRecord
-from rpawright.runner.errors import ExpressionFailure, NestedFailure, PolicyViolation, StepError
+from rpawright.runner.errors import (
+    ExpressionFailure,
+    NestedFailure,
+    NotImplementedStep,
+    PolicyViolation,
+    StepError,
+)
 from rpawright.runner.handlers import HANDLERS
 from rpawright.runner.inputs import build_namespace
 from rpawright.workflow.expressions import ExpressionError
@@ -62,7 +68,7 @@ def _attempt(
             error, policy = e.message, True
         except NestedFailure as e:
             error, policy, nested, cause_path = e.message, e.policy, True, e.cause_path
-        except ExpressionFailure as e:
+        except (ExpressionFailure, NotImplementedStep) as e:
             error, fatal = e.message, True
         except StepError as e:
             error = e.message
@@ -124,14 +130,17 @@ def _recover(
 
 def _render_and_run(run: RunContext, ctx: StepContext, step: Step, action: str) -> None:
     """Render the step's ``{{ }}`` fields against the current scope, then run its handler."""
+    handler = HANDLERS.get(action)
+    if handler is None:
+        raise NotImplementedStep(ctx.step_id, action)
     if not has_templates(step):  # nothing to render: skip building the namespace
-        HANDLERS[action](ctx, step)
+        handler(ctx, step)
         return
     try:
         rendered = render_step(step, build_namespace(run.scope, env=run.env, today=run.today))
     except ExpressionError as e:
         raise ExpressionFailure(ctx.step_id, f"{e.where}: {e}") from e
-    HANDLERS[action](ctx, rendered)
+    handler(ctx, rendered)
 
 
 def run_step(run: RunContext, step: Step, base_path: str) -> StepRecord:

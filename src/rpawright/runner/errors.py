@@ -30,6 +30,13 @@ class ExpressionFailure(StepError):
     """A ``{{ }}`` expression in the step failed to render; never retried."""
 
 
+class NotImplementedStep(StepError):
+    """The step type is accepted by the models but has no runtime handler yet; never retried."""
+
+    def __init__(self, step_id: str, action: str) -> None:
+        super().__init__(step_id, f"step type '{action}' is not implemented yet")
+
+
 class NestedFailure(StepError):
     """A step inside a nested block failed; ``policy`` is set when it was a policy failure."""
 

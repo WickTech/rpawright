@@ -11,7 +11,7 @@ from rpawright.runner.context import StepContext
 from rpawright.runner.engine import RunResult
 from rpawright.runner.errors import NestedFailure, PolicyViolation, StepError
 from rpawright.runner.handlers import HANDLERS
-from rpawright.workflow.models import Step, Workflow
+from rpawright.workflow.models import ACTION_NAMES, Step, Workflow
 
 RunBot = Callable[..., RunResult]
 
@@ -447,3 +447,57 @@ def test_templated_step_sees_vars_after_set(run_bot: RunBot) -> None:
         }
     )
     assert _messages(res) == ["a1", "b2"]
+
+
+_FOR_EACH = {"for_each": {"in": [1, 2], "as": "x", "steps": [{"wait": 1}]}}
+_MSG = "step type 'for_each' is not implemented yet"
+
+
+def test_unimplemented_step_fails_cleanly_and_is_not_retried(run_bot: RunBot) -> None:
+    res = run_bot({"steps": [{**_FOR_EACH, "retry": {"times": 2, "delay_ms": 10}}]})
+    assert res.exit_code == 1 and res.status == "failed"
+    assert len(res.steps) == 1
+    rec = res.steps[0]
+    assert rec.status == "failed" and rec.error == _MSG and rec.attempts == 1
+    logged = _log(res)
+    assert logged[-1]["error"] == _MSG
+    assert "KeyError" not in (res.run_dir / "log.jsonl").read_text(encoding="utf-8")
+
+
+def test_unimplemented_step_after_successful_log_step(run_bot: RunBot) -> None:
+    res = run_bot({"steps": [{"log": {"message": "hi"}}, _FOR_EACH]})
+    assert res.exit_code == 1
+    assert [r.status for r in res.steps] == ["ok", "failed"]
+    assert res.failed_step == res.steps[1].step_id
+
+
+def test_unimplemented_step_honours_on_error_continue(run_bot: RunBot) -> None:
+    res = run_bot({"steps": [{**_FOR_EACH, "on_error": "continue"}, {"log": {"message": "x"}}]})
+    assert res.exit_code == 0
+    assert [r.status for r in res.steps] == ["continued", "ok"]
+    assert res.steps[0].error == _MSG
+
+
+def test_every_action_is_implemented_or_reports_not_implemented() -> None:
+    names = set(ACTION_NAMES.values())
+    implemented = set(HANDLERS)
+    not_implemented = names - implemented
+    assert implemented <= names
+    assert implemented | not_implemented == names
+    assert implemented.isdisjoint(not_implemented)
+    # Pin the current split; update together with the README list when a handler lands.
+    assert implemented == {
+        "goto",
+        "click",
+        "fill",
+        "press",
+        "wait",
+        "assert",
+        "set",
+        "log",
+        "pause",
+    }
+    assert not_implemented == {
+        "select", "hover", "extract_text", "extract_table", "download", "upload", "screenshot",
+        "http", "read_csv", "write_csv", "read_xlsx", "write_xlsx", "if", "for_each", "call",
+    }  # fmt: skip
