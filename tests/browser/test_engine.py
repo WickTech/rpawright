@@ -170,3 +170,12 @@ def test_trace_stop_failure_is_logged(
     assert res.exit_code == 0 and res.status == "ok"
     records = [json.loads(x) for x in (res.run_dir / "log.jsonl").read_text().splitlines()]
     assert {"event": "trace_failed", "error": "trace boom"} in records
+
+
+def test_step_mode_confirm_eof_propagates_and_closes_context(run_bot, _browser) -> None:  # type: ignore[no-untyped-def]
+    def confirm(path: str) -> object:
+        raise EOFError
+
+    with pytest.raises(EOFError):
+        run_bot({"steps": [{"log": {"message": "x"}}]}, step_mode=True, confirm=confirm)
+    assert _browser.contexts == []

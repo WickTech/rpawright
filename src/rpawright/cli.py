@@ -7,8 +7,6 @@ from typing import Annotated
 import typer
 
 from rpawright import __version__
-from rpawright.runner.engine import run_workflow
-from rpawright.runner.inputs import InputError, parse_input_pairs
 from rpawright.workflow.loader import WorkflowError, load_workflow
 from rpawright.workflow.schema import workflow_json_schema
 
@@ -45,7 +43,7 @@ def validate(
             load_workflow(path)
         except WorkflowError as e:
             failed = True
-            typer.echo(f"error  {e}")
+            typer.echo(f"error  {e}", err=True)
         else:
             typer.echo(f"ok  {path}")
     if failed:
@@ -86,8 +84,15 @@ def run(
     try:
         wf = load_workflow(bot)
     except WorkflowError as e:
-        typer.echo(f"error  {e}")
+        typer.echo(f"error  {e}", err=True)
         raise typer.Exit(code=2) from e
+    # Imported lazily: the engine pulls in Playwright, which validate/schema/--version skip.
+    from rpawright.runner.engine import BrowserNotInstalledError, run_workflow
+    from rpawright.runner.inputs import InputError, parse_input_pairs
+
+    def confirm(path: str) -> object:
+        return input(f"press Enter to run {path}, Ctrl-D/Ctrl-C to abort ")
+
     try:
         result = run_workflow(
             wf,
@@ -96,10 +101,19 @@ def run(
             step_mode=step,
             trace=trace,
             inputs=parse_input_pairs(input_ or []),
+            confirm=confirm,
             echo=lambda message: typer.echo(f"log  {message}"),
         )
+    except BrowserNotInstalledError as e:
+        typer.echo(
+            "error  Chromium is not installed. Run: uv run playwright install chromium", err=True
+        )
+        raise typer.Exit(code=1) from e
+    except (EOFError, KeyboardInterrupt) as e:
+        typer.echo("aborted", err=True)
+        raise typer.Exit(code=1) from e
     except InputError as e:
-        typer.echo(f"error  {e}")
+        typer.echo(f"error  {e}", err=True)
         raise typer.Exit(code=2) from e
     for rec in result.steps:
         if rec.status == "ok":
