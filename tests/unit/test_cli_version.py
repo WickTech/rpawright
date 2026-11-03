@@ -13,7 +13,7 @@ def test_version_flag_prints_version() -> None:
     assert __version__ in result.stdout
 
 
-def test_light_commands_do_not_import_playwright() -> None:
+def test_importing_the_cli_does_not_import_playwright() -> None:
     code = "import sys; import rpawright.cli; assert 'playwright' not in sys.modules"
     proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr

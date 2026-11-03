@@ -66,3 +66,33 @@ def test_other_launch_errors_are_not_masked(
     result = CliRunner().invoke(app, ["run", str(bot), "--runs-dir", str(tmp_path / "runs")])
     assert result.exit_code != 0
     assert isinstance(result.exception, PlaywrightError)
+
+
+def test_missing_system_libraries_is_not_reported_as_missing_chromium(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeChromium:
+        def launch(self, **kwargs: object) -> None:
+            raise PlaywrightError(
+                "BrowserType.launch: Host system is missing dependencies to run browsers.\n"
+                "Please install them with: sudo playwright install-deps\n"
+                "Executable doesn't exist at /x/chrome; playwright install"
+            )
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self) -> "FakePlaywright":
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+    monkeypatch.setattr(engine, "sync_playwright", lambda: FakePlaywright())
+    bot = tmp_path / "bot.yaml"
+    bot.write_text(BOT, encoding="utf-8")
+    runs = tmp_path / "runs"
+    result = CliRunner().invoke(app, ["run", str(bot), "--runs-dir", str(runs)])
+    assert "Chromium is not installed" not in result.output
+    assert isinstance(result.exception, PlaywrightError)  # surfaced raw, as for other errors
+    assert not runs.exists()

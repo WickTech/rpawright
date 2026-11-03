@@ -69,7 +69,9 @@ def run_workflow(
             try:
                 owned = pw.chromium.launch(headless=wf.policy.headless and not headed)
             except PlaywrightError as e:
-                if "Executable doesn't exist" in str(e) or "playwright install" in str(e):
+                msg = str(e)
+                missing_libs = "install-deps" in msg or "missing dependencies" in msg
+                if "Executable doesn't exist" in msg and not missing_libs:
                     raise BrowserNotInstalledError(str(e)) from e
                 raise
             stack.callback(owned.close)
